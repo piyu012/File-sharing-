@@ -1,23 +1,19 @@
 import os, hmac, hashlib, time, asyncio, requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
-from bot import Bot  # <-- USE YOUR OLD BOT HERE
+from bot import Bot
 
 HMAC_SECRET = os.getenv("HMAC_SECRET", "secret").encode()
 ADRINO_API = os.getenv("ADRINO_API")
 
-# ------- FASTAPI -------
 api = FastAPI()
+bot = Bot()  # Pyrogram client instance
 
-# ------- USE OLD BOT CLIENT -------
-bot = Bot()  # <-- Pyrogram Client instance only
-# DO NOT start internal web server in bot.py to avoid port conflict
-
-# ------- SIGN -------
+# SIGN function
 def sign(data):
     return hmac.new(HMAC_SECRET, data.encode(), hashlib.sha256).hexdigest()
 
-# ------- SHORTENER -------
+# URL shortener
 def short_adrinolinks(long_url):
     try:
         api_url = f"https://adrinolinks.in/api?api={ADRINO_API}&url={long_url}"
@@ -26,17 +22,16 @@ def short_adrinolinks(long_url):
     except:
         return long_url
 
-# ------- START / STOP -------
+# Startup / Shutdown events
 @api.on_event("startup")
 async def startup_event():
-    # Bot start in background
-    asyncio.create_task(bot.start())
+    asyncio.create_task(bot.start())  # bot background
 
 @api.on_event("shutdown")
 async def shutdown_event():
     await bot.stop()
 
-# ------- TG /ad command -------
+# TG /ad command
 @bot.on_message()
 async def start_cmd(client, message):
     if message.text != "/ad":
@@ -53,7 +48,7 @@ async def start_cmd(client, message):
 
     await message.reply_text(f"👉 Your Ad Link:\n{short_url}")
 
-# ------- WATCH -------
+# /watch endpoint
 @api.get("/watch", response_class=HTMLResponse)
 async def watch(payload: str, sig: str):
     if not hmac.compare_digest(sign(payload), sig):
@@ -64,7 +59,6 @@ async def watch(payload: str, sig: str):
     <body>
         <h2>Watch Ad</h2>
         <p>Wait 6 seconds…</p>
-
         <script>
         setTimeout(function() {{
             window.location.href="/callback?payload={payload}&sig={sig}";
@@ -74,7 +68,7 @@ async def watch(payload: str, sig: str):
     </html>
     """
 
-# ------- CALLBACK -------
+# /callback endpoint
 @api.get("/callback")
 async def callback(payload: str, sig: str):
     if not hmac.compare_digest(sign(payload), sig):
@@ -82,7 +76,6 @@ async def callback(payload: str, sig: str):
 
     uid, ts = payload.split(":")
     token = str(int(time.time()))
-
     await bot.send_message(int(uid), f"🎉 Your Token:\n\n`{token}`")
 
     return {"ok": True, "token": token}
