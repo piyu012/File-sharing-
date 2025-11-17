@@ -55,28 +55,43 @@ async def shutdown_event():
 @bot.on_message(filters.command("start"))
 async def start_cmd(client, message):
     uid = message.from_user.id
-    ts = int(time.time())
+    now = datetime.utcnow()
+    expire_time = now + timedelta(hours=12)
 
-    payload = f"{uid}:{ts}"
-    sig = sign(payload)
+    # --------- Check existing active token ---------
+    token_doc = await tokens_col.find_one({
+        "uid": uid,
+        "used": True,
+        "expires_at": {"$gt": now}
+    })
 
-    # ===== Combine payload & sig in Base64 =====
+    if token_doc:
+        # Token exists & active → reuse
+        payload = token_doc["payload"]
+        sig = token_doc["sig"]
+    else:
+        # Create new token
+        ts = int(time.time())
+        payload = f"{uid}:{ts}"
+        sig = sign(payload)
+
+        await tokens_col.insert_one({
+            "uid": uid,
+            "payload": payload,
+            "sig": sig,
+            "created_at": now,
+            "used": True,
+            "expires_at": expire_time
+        })
+
+    # Encode Base64
     payload_sig = f"{payload}:{sig}"
     encoded_all = base64.urlsafe_b64encode(payload_sig.encode()).decode()
     long_link = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/watch?data={encoded_all}"
     short_url = short_adrinolinks(long_link)
 
-    # --------- STORE IN DB ----------
-    await tokens_col.insert_one({
-        "uid": uid,
-        "payload": payload,
-        "sig": sig,
-        "created_at": datetime.utcnow(),
-        "used": False
-    })
-
     await message.reply_text(
-        f"👋 Welcome!\n\n👉 Your short ad link:\n\n{short_url}"
+        f"👋 Welcome!\n\n👉 Your short ad link (valid 12 hours):\n\n{short_url}"
     )
 
 # ---------------- WATCH PAGE ----------------
@@ -84,26 +99,23 @@ async def start_cmd(client, message):
 async def watch(data: str):
     try:
         decoded = base64.urlsafe_b64decode(data.encode()).decode()
-        payload, sig = decoded.rsplit(":", 1)  # split only on last colon
+        payload, sig = decoded.rsplit(":", 1)
     except:
         raise HTTPException(400, "Invalid data")
 
-    # --------- CHECK DB ----------
     token_doc = await tokens_col.find_one({"payload": payload, "sig": sig})
     if not token_doc:
         raise HTTPException(404, "Token not found")
-
-    if datetime.utcnow() - token_doc["created_at"] > timedelta(hours=24):
+    
+    now = datetime.utcnow()
+    if token_doc["expires_at"] < now:
         raise HTTPException(403, "Token expired")
-    if token_doc["used"]:
-        raise HTTPException(403, "Token already used")
 
     return f"""
     <html>
     <body>
       <h2>Watch Ad</h2>
       <p>Wait 6 seconds…</p>
-
       <script>
       setTimeout(function(){{
           window.location.href="/callback?data={data}";
@@ -125,20 +137,19 @@ async def callback(data: str):
     token_doc = await tokens_col.find_one({"payload": payload, "sig": sig})
     if not token_doc:
         raise HTTPException(404, "Token not found")
-    if datetime.utcnow() - token_doc["created_at"] > timedelta(hours=24):
+
+    now = datetime.utcnow()
+    if token_doc["expires_at"] < now:
         raise HTTPException(403, "Token expired")
-    if token_doc["used"]:
-        raise HTTPException(403, "Token already used")
 
     uid, ts = payload.split(":")
     token = str(int(time.time()))
 
-    # Mark token as used
+    # Update expires_at if needed
     await tokens_col.update_one(
         {"_id": token_doc["_id"]},
-        {"$set": {"used": True}}
+        {"$set": {"used": True, "expires_at": now + timedelta(hours=12)}}
     )
 
     await bot.send_message(int(uid), f"🎉 Your Token:\n\n`{token}`")
-
     return {"ok": True, "token": token}
