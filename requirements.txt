@@ -5,7 +5,8 @@ pymongo
 dnspython
 aiohttp
 motor
-
+fastapi
+uvicorn
 humanize
 
 
