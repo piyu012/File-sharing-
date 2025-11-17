@@ -1,4 +1,4 @@
-import os, hmac, hashlib, time, asyncio, requests, urllib.parse
+import os, hmac, hashlib, time, asyncio, requests, base64
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pyrogram import Client, filters
@@ -51,11 +51,11 @@ async def start_cmd(client, message):
     payload = f"{uid}:{ts}"
     sig = sign(payload)
 
-    # ====== URL-safe encode both payload & sig ======
-    encoded_payload = urllib.parse.quote(payload)
-    encoded_sig = urllib.parse.quote(sig)
+    # ===== Combine payload & sig in Base64 =====
+    payload_sig = f"{payload}:{sig}"
+    encoded_all = base64.urlsafe_b64encode(payload_sig.encode()).decode()
 
-    long_link = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/watch?payload={encoded_payload}&sig={encoded_sig}"
+    long_link = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/watch?data={encoded_all}"
 
     # --------- SHORTEN USING ADRINOLINKS ----------
     short_url = short_adrinolinks(long_link)
@@ -66,10 +66,13 @@ async def start_cmd(client, message):
 
 # ---------------- WATCH PAGE ----------------
 @api.get("/watch", response_class=HTMLResponse)
-async def watch(payload: str, sig: str):
-    # Decode payload & sig
-    payload = urllib.parse.unquote(payload)
-    sig = urllib.parse.unquote(sig)
+async def watch(data: str):
+    # Decode Base64
+    try:
+        decoded = base64.urlsafe_b64decode(data.encode()).decode()
+        payload, sig = decoded.split(":")
+    except:
+        raise HTTPException(400, "Invalid data")
 
     if not hmac.compare_digest(sign(payload), sig):
         raise HTTPException(401, "Invalid Signature")
@@ -82,7 +85,7 @@ async def watch(payload: str, sig: str):
 
       <script>
       setTimeout(function(){{
-          window.location.href="/callback?payload={payload}&sig={sig}";
+          window.location.href="/callback?data={data}";
       }},6000);
       </script>
     </body>
@@ -91,10 +94,13 @@ async def watch(payload: str, sig: str):
 
 # ---------------- CALLBACK ----------------
 @api.get("/callback")
-async def callback(payload: str, sig: str):
-    # Decode payload & sig
-    payload = urllib.parse.unquote(payload)
-    sig = urllib.parse.unquote(sig)
+async def callback(data: str):
+    # Decode Base64
+    try:
+        decoded = base64.urlsafe_b64decode(data.encode()).decode()
+        payload, sig = decoded.split(":")
+    except:
+        raise HTTPException(400, "Invalid data")
 
     if not hmac.compare_digest(sign(payload), sig):
         raise HTTPException(401, "Invalid Signature")
