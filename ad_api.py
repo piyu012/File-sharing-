@@ -34,34 +34,27 @@ mongo = AsyncIOMotorClient(MONGO_URI)
 db = mongo[DB_NAME]
 tokens_col = db.tokens
 
-
 # ---------------- HMAC SIGN ----------------
 def sign(data):
     return hmac.new(HMAC_SECRET, data.encode(), hashlib.sha256).hexdigest()
 
-
 # ---------------- SHORTENER ----------------
 def short_adrinolinks(long_url):
     try:
-        r = requests.get(
-            f"https://adrinolinks.in/api?api={ADRINO_API}&url={long_url}"
-        ).json()
+        r = requests.get(f"https://adrinolinks.in/api?api={ADRINO_API}&url={long_url}").json()
         return r.get("shortenedUrl") or long_url
     except:
         return long_url
-
 
 # ---------------- BOT START ----------------
 @api.on_event("startup")
 async def startup():
     asyncio.create_task(bot.start())
 
-
 # ---------------- BOT STOP ----------------
 @api.on_event("shutdown")
 async def shutdown():
     await bot.stop()
-
 
 # ============================================================
 #     USER STARTS /start
@@ -69,34 +62,32 @@ async def shutdown():
 @bot.on_message(filters.command("start"))
 async def start_cmd(client, message):
     uid = message.from_user.id
+    username = getattr(message.from_user, "username", str(uid))
     now = datetime.utcnow()
 
     # Check if token is active
-    active_token = await tokens_col.find_one({
+    token = await tokens_col.find_one({
         "uid": uid,
         "used": True,
         "expires_at": {"$gt": now}
     })
 
-    if active_token:
-        # Token active → normal welcome message
+    if token:
+        # Active token → welcome message
         text = (
-            f"🎉 स्वागत है @{message.from_user.username}!\n\n"
-            "आपका Ad Token पहले से एक्टिव है, आप बिना Ad देखे बॉट यूज़ कर सकते हो."
+            f"🎉 स्वागत है @{username}!\n\n"
+            "आपका Ad Token पहले से एक्टिव है, आप बिना Ad देखे बॉट इस्तेमाल कर सकते हो।"
         )
         await message.reply_text(text)
     else:
-        # Token missing/expired → show ad button
+        # Missing or expired token → show Ad button
         watch_url = f"https://{HOST}/gen?uid={uid}"
-        btn = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Click Here (Watch Ad)", url=watch_url)]]
-        )
+        btn = InlineKeyboardMarkup([[InlineKeyboardButton("Click Here (Watch Ad)", url=watch_url)]])
         text = (
-            "❌ आपका Ads Token Expire हो गया है या नहीं है!\n\n"
+            "❌ आपका Ads Token Expire हो गया है या मौजूद नहीं है!\n\n"
             "👉 सिर्फ 1 Ad देखो और पूरा bot 12 घंटे के लिए Unlock!"
         )
         await message.reply_text(text, reply_markup=btn)
-
 
 # ============================================================
 #     /gen → generate token
@@ -110,7 +101,6 @@ async def gen(uid: int = Query(...)):
 
     expire_time = now + timedelta(hours=12)
 
-    # Save token
     await tokens_col.insert_one({
         "uid": uid,
         "payload": payload,
@@ -123,7 +113,6 @@ async def gen(uid: int = Query(...)):
 
     encoded = base64.urlsafe_b64encode(f"{payload}:{sig}".encode()).decode()
     watch_url = f"https://{HOST}/watch?data={encoded}"
-
     short = short_adrinolinks(watch_url)
 
     return f"""
@@ -132,7 +121,6 @@ async def gen(uid: int = Query(...)):
         <a href="{short}">{short}</a>
     </body></html>
     """
-
 
 # ============================================================
 #     WATCH → redirect
@@ -148,7 +136,6 @@ async def watch(data: str = Query(...)):
     </html>
     """
 
-
 # ============================================================
 #     CALLBACK → VERIFY + Activate token
 # ============================================================
@@ -160,14 +147,12 @@ async def callback(data: str = Query(...)):
     except:
         raise HTTPException(400, "Invalid data format")
 
-    # Find token
     doc = await tokens_col.find_one({"payload": payload, "sig": sig})
     if not doc:
         raise HTTPException(404, "Token not found")
 
     uid, ts = payload.split(":")
     uid = int(uid)
-
     now = datetime.utcnow()
 
     await tokens_col.update_one(
