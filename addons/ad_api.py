@@ -10,10 +10,10 @@ HMAC_SECRET = os.getenv("HMAC_SECRET", "secret").encode()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
-ADRINO_API = os.getenv("ADRINO_API")   # Adrinolinks API KEY
-MONGO_URI = os.getenv("MONGO_URI")     # MongoDB URI
+ADRINO_API = os.getenv("ADRINO_API")
+MONGO_URI = os.getenv("MONGO_URI")
 DB_NAME = "filesharebott"
-ADMIN_ID = int(os.getenv("ADMIN_ID"))  # Telegram ID for admin notifications
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
 api = FastAPI()
 
@@ -37,8 +37,9 @@ def sign(data):
 # ---------------- ADRINOLINKS SHORTENER ----------------
 def short_adrinolinks(long_url):
     try:
-        api_url = f"https://adrinolinks.in/api?api={ADRINO_API}&url={long_url}"
-        r = requests.get(api_url).json()
+        r = requests.get(
+            f"https://adrinolinks.in/api?api={ADRINO_API}&url={long_url}"
+        ).json()
         return r.get("shortenedUrl", long_url)
     except:
         return long_url
@@ -52,60 +53,65 @@ async def startup_event():
 async def shutdown_event():
     await bot.stop()
 
-# ---------------- BOT HANDLER ----------------
+# ============================================================
+#                     START COMMAND FIXED
+# ============================================================
 @bot.on_message(filters.command("start"))
 async def start_cmd(client, message):
     uid = message.from_user.id
     now = datetime.utcnow()
-    expire_time = now + timedelta(hours=12)
 
     # --------- Check existing active token ---------
-    token_doc = await tokens_col.find_one({
+    existing = await tokens_col.find_one({
         "uid": uid,
-        "used": True,
         "expires_at": {"$gt": now}
     })
 
-    if token_doc:
-        # Token exists & active → reuse
-        payload = token_doc["payload"]
-        sig = token_doc["sig"]
-    else:
-        # Create new token
-        ts = int(time.time())
-        payload = f"{uid}:{ts}"
-        sig = sign(payload)
+    if existing:
+        exp = existing["expires_at"].strftime("%Y-%m-%d %H:%M:%S")
+        await message.reply_text(
+            f"✅ आपका token पहले से activate है!\n"
+            f"⏳ Valid till: {exp}\n\n"
+            f"आपको ad दुबारा देखने की जरूरत नहीं है।"
+        )
+        return
 
-        await tokens_col.insert_one({
-            "uid": uid,
-            "payload": payload,
-            "sig": sig,
-            "created_at": now,
-            "used": True,
-            "activated_at": now,
-            "expires_at": expire_time
-        })
+    # --------- Create NEW token ---------
+    ts = int(time.time())
+    payload = f"{uid}:{ts}"
+    sig = sign(payload)
+    expire_time = now + timedelta(hours=12)
 
-        # ---------------- Notify admin ----------------
-        try:
-            await bot.send_message(
-                ADMIN_ID,
-                f"✅ Token activated for user {uid}\nValid for 12 hours.\nPayload: {payload}"
-            )
-        except:
-            pass
+    await tokens_col.insert_one({
+        "uid": uid,
+        "payload": payload,
+        "sig": sig,
+        "created_at": now,
+        "used": False,
+        "activated_at": None,
+        "expires_at": expire_time
+    })
 
-    # Encode Base64
-    payload_sig = f"{payload}:{sig}"
-    encoded_all = base64.urlsafe_b64encode(payload_sig.encode()).decode()
-    long_link = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/watch?data={encoded_all}"
-    short_url = short_adrinolinks(long_link)
+    # Notify admin
+    try:
+        await bot.send_message(
+            ADMIN_ID,
+            f"🆕 New token generated for user {uid}\nPayload: {payload}"
+        )
+    except:
+        pass
+
+    encoded = base64.urlsafe_b64encode(f"{payload}:{sig}".encode()).decode()
+    url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/watch?data={encoded}"
+    short_url = short_adrinolinks(url)
 
     await message.reply_text(
-        f"👋 Welcome!\n\n👉 Your short ad link (valid 12 hours):\n\n{short_url}"
+        f"🔗 आपका token activate करने के लिए नीचे ad देखें:\n\n{short_url}"
     )
 
-# ---------------- WATCH PAGE ----------------
+# ============================================================
+#                     WATCH PAGE
+# ============================================================
 @api.get("/watch", response_class=HTMLResponse)
 async def watch(data: str):
     try:
@@ -114,19 +120,19 @@ async def watch(data: str):
     except:
         raise HTTPException(400, "Invalid data")
 
-    token_doc = await tokens_col.find_one({"payload": payload, "sig": sig})
-    if not token_doc:
+    doc = await tokens_col.find_one({"payload": payload, "sig": sig})
+    if not doc:
         raise HTTPException(404, "Token not found")
-    
+
     now = datetime.utcnow()
-    if token_doc["expires_at"] < now:
+    if doc["expires_at"] < now:
         raise HTTPException(403, "Token expired")
 
     return f"""
     <html>
     <body>
-      <h2>Watch Ad</h2>
-      <p>Wait 6 seconds…</p>
+      <h2>Ad चल रहा है…</h2>
+      <p>कृपया 6 seconds wait करें…</p>
       <script>
       setTimeout(function(){{
           window.location.href="/callback?data={data}";
@@ -136,7 +142,9 @@ async def watch(data: str):
     </html>
     """
 
-# ---------------- CALLBACK ----------------
+# ============================================================
+#                     CALLBACK (Activate Token)
+# ============================================================
 @api.get("/callback")
 async def callback(data: str):
     try:
@@ -145,31 +153,40 @@ async def callback(data: str):
     except:
         raise HTTPException(400, "Invalid data")
 
-    token_doc = await tokens_col.find_one({"payload": payload, "sig": sig})
-    if not token_doc:
+    doc = await tokens_col.find_one({"payload": payload, "sig": sig})
+    if not doc:
         raise HTTPException(404, "Token not found")
 
     now = datetime.utcnow()
-    if token_doc["expires_at"] < now:
+
+    if doc["expires_at"] < now:
         raise HTTPException(403, "Token expired")
 
     uid, ts = payload.split(":")
-    token = str(int(time.time()))
+    token_value = str(int(time.time()))  # Simple token
 
-    # Update token expiry if needed
+    # Update DB
     await tokens_col.update_one(
-        {"_id": token_doc["_id"]},
-        {"$set": {"used": True, "expires_at": now + timedelta(hours=12)}}
+        {"_id": doc["_id"]},
+        {
+            "$set": {
+                "used": True,
+                "activated_at": now,
+                "expires_at": now + timedelta(hours=12)
+            }
+        }
     )
 
-    # ---------------- Notify admin ----------------
+    # Notify admin
     try:
         await bot.send_message(
             ADMIN_ID,
-            f"🔔 Token used by user {uid}\nToken valid until: {now + timedelta(hours=12)}"
+            f"🔔 Token activated by {uid}\nValid till: {now + timedelta(hours=12)}"
         )
     except:
         pass
 
-    await bot.send_message(int(uid), f"🎉 Your Token:\n\n`{token}`")
-    return {"ok": True, "token": token}
+    # Send token to user
+    await bot.send_message(int(uid), f"🎉 आपका Token:\n\n`{token_value}`")
+
+    return {"ok": True, "token": token_value}
