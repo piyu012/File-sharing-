@@ -2,6 +2,8 @@ import os, hmac, hashlib, time, asyncio, requests, base64
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pyrogram import Client, filters
+from motor.motor_asyncio import AsyncIOMotorClient
+from datetime import datetime, timedelta
 
 # ---------------- ENV ----------------
 HMAC_SECRET = os.getenv("HMAC_SECRET", "secret").encode()
@@ -9,6 +11,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 ADRINO_API = os.getenv("ADRINO_API")   # Adrinolinks API KEY
+MONGO_URI = os.getenv("MONGO_URI")     # MongoDB URI
+DB_NAME = "filesharebott"
 
 api = FastAPI()
 
@@ -19,6 +23,11 @@ bot = Client(
     api_hash=API_HASH,
     bot_token=BOT_TOKEN
 )
+
+# ---------------- MongoDB ----------------
+mongo = AsyncIOMotorClient(MONGO_URI)
+db = mongo[DB_NAME]
+tokens_col = db.tokens
 
 # ---------------- HMAC SIGN ----------------
 def sign(data):
@@ -54,11 +63,17 @@ async def start_cmd(client, message):
     # ===== Combine payload & sig in Base64 =====
     payload_sig = f"{payload}:{sig}"
     encoded_all = base64.urlsafe_b64encode(payload_sig.encode()).decode()
-
     long_link = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/watch?data={encoded_all}"
-
-    # --------- SHORTEN USING ADRINOLINKS ----------
     short_url = short_adrinolinks(long_link)
+
+    # --------- STORE IN DB ----------
+    await tokens_col.insert_one({
+        "uid": uid,
+        "payload": payload,
+        "sig": sig,
+        "created_at": datetime.utcnow(),
+        "used": False
+    })
 
     await message.reply_text(
         f"👋 Welcome!\n\n👉 Your short ad link:\n\n{short_url}"
@@ -67,15 +82,21 @@ async def start_cmd(client, message):
 # ---------------- WATCH PAGE ----------------
 @api.get("/watch", response_class=HTMLResponse)
 async def watch(data: str):
-    # Decode Base64
     try:
         decoded = base64.urlsafe_b64decode(data.encode()).decode()
-        payload, sig = decoded.rsplit(":", 1)  # FIX: split only on last colon
+        payload, sig = decoded.rsplit(":", 1)  # split only on last colon
     except:
         raise HTTPException(400, "Invalid data")
 
-    if not hmac.compare_digest(sign(payload), sig):
-        raise HTTPException(401, "Invalid Signature")
+    # --------- CHECK DB ----------
+    token_doc = await tokens_col.find_one({"payload": payload, "sig": sig})
+    if not token_doc:
+        raise HTTPException(404, "Token not found")
+
+    if datetime.utcnow() - token_doc["created_at"] > timedelta(hours=24):
+        raise HTTPException(403, "Token expired")
+    if token_doc["used"]:
+        raise HTTPException(403, "Token already used")
 
     return f"""
     <html>
@@ -95,18 +116,28 @@ async def watch(data: str):
 # ---------------- CALLBACK ----------------
 @api.get("/callback")
 async def callback(data: str):
-    # Decode Base64
     try:
         decoded = base64.urlsafe_b64decode(data.encode()).decode()
-        payload, sig = decoded.rsplit(":", 1)  # FIX: split only on last colon
+        payload, sig = decoded.rsplit(":", 1)
     except:
         raise HTTPException(400, "Invalid data")
 
-    if not hmac.compare_digest(sign(payload), sig):
-        raise HTTPException(401, "Invalid Signature")
+    token_doc = await tokens_col.find_one({"payload": payload, "sig": sig})
+    if not token_doc:
+        raise HTTPException(404, "Token not found")
+    if datetime.utcnow() - token_doc["created_at"] > timedelta(hours=24):
+        raise HTTPException(403, "Token expired")
+    if token_doc["used"]:
+        raise HTTPException(403, "Token already used")
 
     uid, ts = payload.split(":")
     token = str(int(time.time()))
+
+    # Mark token as used
+    await tokens_col.update_one(
+        {"_id": token_doc["_id"]},
+        {"$set": {"used": True}}
+    )
 
     await bot.send_message(int(uid), f"🎉 Your Token:\n\n`{token}`")
 
