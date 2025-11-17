@@ -1,4 +1,4 @@
-import os, hmac, hashlib, time, asyncio
+import os, hmac, hashlib, time, asyncio, requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pyrogram import Client, filters
@@ -7,10 +7,11 @@ HMAC_SECRET = os.getenv("HMAC_SECRET", "secret").encode()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
+ADRINO_API = os.getenv("ADRINO_API")   # Put your Adrinolinks API KEY in Render env
 
 api = FastAPI()
 
-# ---------------- Correct Pyrogram Client ----------------
+# ---------------- Pyrogram Client ----------------
 bot = Client(
     "adbot",
     api_id=API_ID,
@@ -22,19 +23,26 @@ bot = Client(
 def sign(data):
     return hmac.new(HMAC_SECRET, data.encode(), hashlib.sha256).hexdigest()
 
+# ---------------- ADRINOLINKS SHORTENER ----------------
+def short_adrinolinks(long_url):
+    try:
+        api_url = f"https://adrinolinks.in/api?api={ADRINO_API}&url={long_url}"
+        r = requests.get(api_url).json()
+        return r.get("shortenedUrl", long_url)
+    except:
+        return long_url
+
 # ---------------- BOT START / STOP ----------------
 
 @api.on_event("startup")
 async def startup_event():
-    print("Starting Pyrogram bot...")
     asyncio.create_task(bot.start())
 
 @api.on_event("shutdown")
 async def shutdown_event():
-    print("Stopping Pyrogram bot...")
     await bot.stop()
 
-# -------------------- BOT HANDLER --------------------
+# ---------------- BOT HANDLER ----------------
 
 @bot.on_message(filters.command("start"))
 async def start_cmd(client, message):
@@ -44,13 +52,16 @@ async def start_cmd(client, message):
     payload = f"{uid}:{ts}"
     sig = sign(payload)
 
-    link = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/watch?payload={payload}&sig={sig}"
+    long_link = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/watch?payload={payload}&sig={sig}"
+
+    # --------- SHORTEN USING ADRINOLINKS ----------
+    short_url = short_adrinolinks(long_link)
 
     await message.reply_text(
-        f"👋 Welcome!\n\n👉 Click below to get your token:\n\n{link}"
+        f"👋 Welcome!\n\n👉 Your short ad link:\n\n{short_url}"
     )
 
-# ------------------- FASTAPI ROUTES ------------------
+# ---------------- WATCH PAGE ----------------
 
 @api.get("/watch", response_class=HTMLResponse)
 async def watch(payload: str, sig: str):
@@ -71,6 +82,8 @@ async def watch(payload: str, sig: str):
     </body>
     </html>
     """
+
+# ---------------- CALLBACK ----------------
 
 @api.get("/callback")
 async def callback(payload: str, sig: str):
