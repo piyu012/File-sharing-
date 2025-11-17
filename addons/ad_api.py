@@ -10,7 +10,7 @@ HMAC_SECRET = os.getenv("HMAC_SECRET", "secret").encode()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
-ADRINO_API = os.getenv("ADRINO_API")   # Adrinolinks API KEY
+ADRINO_API = os.getenv("ADRINO_API")
 MONGO_URI = os.getenv("MONGO_URI")     # MongoDB URI
 DB_NAME = "filesharebott"              # Explicit database name
 
@@ -42,6 +42,21 @@ def short_adrinolinks(long_url):
     except:
         return long_url
 
+# ---------------- UTILITY: ENCODE / DECODE ----------------
+def encode_data(payload_sig: str) -> str:
+    """Base64 encode + URL encode"""
+    encoded = base64.urlsafe_b64encode(payload_sig.encode()).decode()
+    return urllib.parse.quote(encoded)
+
+def decode_data(data: str) -> str:
+    """URL decode + Base64 decode with padding fix"""
+    try:
+        data = urllib.parse.unquote(data)
+        data += '=' * (-len(data) % 4)  # Fix padding
+        return base64.urlsafe_b64decode(data.encode()).decode()
+    except Exception:
+        raise HTTPException(400, "Invalid data")
+
 # ---------------- BOT START / STOP ----------------
 @api.on_event("startup")
 async def startup_event():
@@ -50,12 +65,6 @@ async def startup_event():
 @api.on_event("shutdown")
 async def shutdown_event():
     await bot.stop()
-
-# ---------------- Base64 URL decode with padding ----------------
-def decode_base64_urlsafe(data: str):
-    data = urllib.parse.unquote(data)  # URL decode first
-    data += '=' * (-len(data) % 4)      # Fix padding
-    return base64.urlsafe_b64decode(data.encode()).decode()
 
 # ---------------- BOT HANDLER ----------------
 @bot.on_message(filters.command("start"))
@@ -66,15 +75,12 @@ async def start_cmd(client, message):
     payload = f"{uid}:{ts}"
     sig = sign(payload)
 
-    # ===== Combine payload & sig in Base64 =====
     payload_sig = f"{payload}:{sig}"
-    encoded_all = base64.urlsafe_b64encode(payload_sig.encode()).decode()
-    encoded_all = urllib.parse.quote(encoded_all)  # URL safe
-
+    encoded_all = encode_data(payload_sig)
     long_link = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/watch?data={encoded_all}"
     short_url = short_adrinolinks(long_link)
 
-    # ---------------- STORE IN DB ----------------
+    # Store in DB
     await tokens_col.insert_one({
         "uid": uid,
         "payload": payload,
@@ -90,20 +96,16 @@ async def start_cmd(client, message):
 # ---------------- WATCH PAGE ----------------
 @api.get("/watch", response_class=HTMLResponse)
 async def watch(data: str):
-    try:
-        decoded = decode_base64_urlsafe(data)
-        payload, sig = decoded.split(":")
-    except:
-        raise HTTPException(400, "Invalid data")
+    decoded = decode_data(data)
+    payload, sig = decoded.split(":")
 
+    # Check DB
     token_doc = await tokens_col.find_one({"payload": payload, "sig": sig})
     if not token_doc:
         raise HTTPException(404, "Token not found")
 
-    # Check 24 hours validity
     if datetime.utcnow() - token_doc["created_at"] > timedelta(hours=24):
         raise HTTPException(403, "Token expired")
-    
     if token_doc["used"]:
         raise HTTPException(403, "Token already used")
 
@@ -114,7 +116,7 @@ async def watch(data: str):
       <p>Wait 6 seconds…</p>
       <script>
       setTimeout(function(){{
-          window.location.href="/callback?data={urllib.parse.quote(data)}";
+          window.location.href="/callback?data={data}";
       }},6000);
       </script>
     </body>
@@ -124,20 +126,15 @@ async def watch(data: str):
 # ---------------- CALLBACK ----------------
 @api.get("/callback")
 async def callback(data: str):
-    try:
-        decoded = decode_base64_urlsafe(data)
-        payload, sig = decoded.split(":")
-    except:
-        raise HTTPException(400, "Invalid data")
+    decoded = decode_data(data)
+    payload, sig = decoded.split(":")
 
+    # Check DB
     token_doc = await tokens_col.find_one({"payload": payload, "sig": sig})
     if not token_doc:
         raise HTTPException(404, "Token not found")
-
-    # Check 24 hours validity
     if datetime.utcnow() - token_doc["created_at"] > timedelta(hours=24):
         raise HTTPException(403, "Token expired")
-    
     if token_doc["used"]:
         raise HTTPException(403, "Token already used")
 
@@ -151,5 +148,4 @@ async def callback(data: str):
     )
 
     await bot.send_message(int(uid), f"🎉 Your Token:\n\n`{token}`")
-
     return {"ok": True, "token": token}
