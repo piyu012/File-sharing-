@@ -1,3 +1,2 @@
-from addons.ad_api import api
-
-app = api
+from bot import Bot
+Bot().run()
