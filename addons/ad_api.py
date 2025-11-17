@@ -14,7 +14,7 @@ ADRINO_API = os.getenv("ADRINO_API")
 MONGO_URI = os.getenv("MONGO_URI")
 DB_NAME = "filesharebott"
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
-BOT_USERNAME = os.getenv("BOT_USERNAME")   # <-- ADD THIS IN .env
+BOT_USERNAME = os.getenv("BOT_USERNAME")
 
 api = FastAPI()
 
@@ -62,9 +62,10 @@ async def start_cmd(client, message):
     uid = message.from_user.id
     now = datetime.utcnow()
 
-    # --------- Check existing active token ---------
+    # --------- Check existing activated & valid token ---------
     existing = await tokens_col.find_one({
         "uid": uid,
+        "used": True,
         "expires_at": {"$gt": now}
     })
 
@@ -129,15 +130,16 @@ async def watch(data: str):
     if doc["expires_at"] < now:
         raise HTTPException(403, "Token expired")
 
-    # 🔥 NO WAIT PAGE → DIRECT REDIRECT
+    # If user already used this token → no reuse
+    if doc["used"]:
+        raise HTTPException(403, "Token already used")
+
     return f"""
     <html>
     <head>
       <meta http-equiv="refresh" content="0; url=/callback?data={data}" />
     </head>
-    <body>
-      Redirecting…
-    </body>
+    <body>Redirecting…</body>
     </html>
     """
 
@@ -157,19 +159,25 @@ async def callback(data: str):
         raise HTTPException(404, "Token not found")
 
     now = datetime.utcnow()
+
     if doc["expires_at"] < now:
         raise HTTPException(403, "Token expired")
 
+    # Prevent double-use
+    if doc["used"]:
+        raise HTTPException(403, "Token already used")
+
     uid, ts = payload.split(":")
 
-    # Update DB
+    # -------- Activate token ---------
+    new_expiry = now + timedelta(hours=12)
     await tokens_col.update_one(
         {"_id": doc["_id"]},
         {
             "$set": {
                 "used": True,
                 "activated_at": now,
-                "expires_at": now + timedelta(hours=12)
+                "expires_at": new_expiry
             }
         }
     )
@@ -178,22 +186,18 @@ async def callback(data: str):
     try:
         await bot.send_message(
             ADMIN_ID,
-            f"🔔 Token activated by {uid}\nValid till: {now + timedelta(hours=12)}"
+            f"🔔 Token activated by {uid}\nValid till: {new_expiry}"
         )
     except:
         pass
 
-    # -----------------------------------------------
-    # ✔ USER ONLY GETS SUCCESS MESSAGE (NO TOKEN)
-    # -----------------------------------------------
+    # User message
     await bot.send_message(
         int(uid),
-        "✅ Your token successfully verified and valid for: 12 Hour"
+        f"✅ आपका token verify हो गया!\n⏳ Valid for: 12 Hour"
     )
 
-    # -----------------------------------------------
-    # 🔥 Auto redirect to telegram start=done
-    # -----------------------------------------------
+    # Auto redirect to Telegram start=done
     deep_link = f"tg://resolve?domain={BOT_USERNAME}&start=done"
 
     return HTMLResponse(f"""
