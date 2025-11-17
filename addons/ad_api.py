@@ -1,29 +1,21 @@
 import os, hmac, hashlib, time, asyncio, requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
-from pyrogram import Client, filters
+from bot import Bot   # <-- USE YOUR OLD BOT HERE
 
 HMAC_SECRET = os.getenv("HMAC_SECRET", "secret").encode()
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
-ADRINO_API = os.getenv("ADRINO_API")   # Put your Adrinolinks API KEY in Render env
+ADRINO_API = os.getenv("ADRINO_API")
 
 api = FastAPI()
 
-# ---------------- Pyrogram Client ----------------
-bot = Client(
-    "adbot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN
-)
+# ------- USE OLD BOT CLIENT -------
+bot = Bot().app   # <--- IMPORTANT
 
-# ---------------- HMAC SIGN ----------------
+# ------- SIGN -------
 def sign(data):
     return hmac.new(HMAC_SECRET, data.encode(), hashlib.sha256).hexdigest()
 
-# ---------------- ADRINOLINKS SHORTENER ----------------
+# ------- SHORTENER -------
 def short_adrinolinks(long_url):
     try:
         api_url = f"https://adrinolinks.in/api?api={ADRINO_API}&url={long_url}"
@@ -32,8 +24,7 @@ def short_adrinolinks(long_url):
     except:
         return long_url
 
-# ---------------- BOT START / STOP ----------------
-
+# ------- START / STOP -------
 @api.on_event("startup")
 async def startup_event():
     asyncio.create_task(bot.start())
@@ -42,27 +33,27 @@ async def startup_event():
 async def shutdown_event():
     await bot.stop()
 
-# ---------------- BOT HANDLER ----------------
-
-@bot.on_message(filters.command("start"))
+# ------- TG /ad command -------
+@bot.on_message()
 async def start_cmd(client, message):
+    if message.text != "/ad":
+        return
+
     uid = message.from_user.id
     ts = int(time.time())
 
     payload = f"{uid}:{ts}"
     sig = sign(payload)
 
-    long_link = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/watch?payload={payload}&sig={sig}"
+    hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME")
 
-    # --------- SHORTEN USING ADRINOLINKS ----------
+    long_link = f"https://{hostname}/watch?payload={payload}&sig={sig}"
+
     short_url = short_adrinolinks(long_link)
 
-    await message.reply_text(
-        f"👋 Welcome!\n\n👉 Your short ad link:\n\n{short_url}"
-    )
+    await message.reply_text(f"👉 Your Ad Link:\n{short_url}")
 
-# ---------------- WATCH PAGE ----------------
-
+# ------- WATCH -------
 @api.get("/watch", response_class=HTMLResponse)
 async def watch(payload: str, sig: str):
     if not hmac.compare_digest(sign(payload), sig):
@@ -71,20 +62,19 @@ async def watch(payload: str, sig: str):
     return f"""
     <html>
     <body>
-      <h2>Watch Ad</h2>
-      <p>Wait 6 seconds…</p>
+        <h2>Watch Ad</h2>
+        <p>Wait 6 seconds…</p>
 
-      <script>
-      setTimeout(function(){{
-          window.location.href="/callback?payload={payload}&sig={sig}";
-      }},6000);
-      </script>
+        <script>
+        setTimeout(function() {{
+            window.location.href="/callback?payload={payload}&sig={sig}";
+        }}, 6000);
+        </script>
     </body>
     </html>
     """
 
-# ---------------- CALLBACK ----------------
-
+# ------- CALLBACK -------
 @api.get("/callback")
 async def callback(payload: str, sig: str):
     if not hmac.compare_digest(sign(payload), sig):
