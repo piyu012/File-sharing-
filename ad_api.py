@@ -1,5 +1,5 @@
 import os, hmac, hashlib, time, asyncio, requests, base64
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timedelta
@@ -57,14 +57,13 @@ async def shutdown():
     await bot.stop()
 
 # ============================================================
-#     USER STARTS /start → CHECK TOKEN OR SHOW EXPIRED PAGE
+#     USER STARTS /start
 # ============================================================
 @bot.on_message(filters.command("start"))
 async def start_cmd(client, message):
     uid = message.from_user.id
     now = datetime.utcnow()
 
-    # 1️⃣ check active token
     existing = await tokens_col.find_one({
         "uid": uid,
         "used": True,
@@ -77,11 +76,9 @@ async def start_cmd(client, message):
             "आप बिना ad देखे बॉट इस्तेमाल कर सकते हो।"
         )
 
-    # 2️⃣ show token expired page
     await message.reply_text(
         "❌ Your Ads token is expired.\n\n"
-        "Token Timeout: 12 Hours\n\n"
-        "👉 1 Ad देखो और 12 घंटे के लिए पूरा bot अनलॉक करो!",
+        "👉 1 Ad देखो और 12 घंटे के लिए bot unlock करो!",
         reply_markup={
             "inline_keyboard": [
                 [
@@ -95,7 +92,7 @@ async def start_cmd(client, message):
     )
 
 # ============================================================
-#        /gen → create new token + send short link
+#     /gen → new token generator
 # ============================================================
 @api.get("/gen")
 async def gen(uid: int):
@@ -103,6 +100,7 @@ async def gen(uid: int):
     ts = int(time.time())
     payload = f"{uid}:{ts}"
     sig = sign(payload)
+
     expire_time = now + timedelta(hours=12)
 
     await tokens_col.insert_one({
@@ -127,29 +125,29 @@ async def gen(uid: int):
     """)
 
 # ============================================================
-#    WATCH PAGE → redirect instantly → callback → telegram
+#     WATCH PAGE
 # ============================================================
 @api.get("/watch", response_class=HTMLResponse)
-async def watch(data: str):
+async def watch(data: str = Query(...)):
     return f"""
     <html>
-    <head>
-      <meta http-equiv="refresh" content="0; url=/callback?data={data}" />
-    </head>
-    <body>Loading…</body>
+      <head>
+        <meta http-equiv="refresh" content="0; url=/callback?data={data}" />
+      </head>
+      <body>Loading…</body>
     </html>
     """
 
 # ============================================================
-#    CALLBACK → final verify → telegram auto redirect
+#     CALLBACK → FINAL VERIFY
 # ============================================================
-@api.get("/callback")
-async def callback(data: str):
+@api.get("/callback", response_class=HTMLResponse)
+async def callback(data: str = Query(...)):
     try:
         decoded = base64.urlsafe_b64decode(data).decode()
         payload, sig = decoded.rsplit(":", 1)
     except:
-        raise HTTPException(400, "Invalid")
+        raise HTTPException(400, "Invalid data")
 
     doc = await tokens_col.find_one({"payload": payload, "sig": sig})
     if not doc:
@@ -170,9 +168,11 @@ async def callback(data: str):
 
     deep = f"tg://resolve?domain={BOT_USERNAME}&start=done"
 
-    return HTMLResponse(f"""
+    return f"""
     <html>
-    <head><meta http-equiv="refresh" content="0; url={deep}" /></head>
-    <body>Redirecting…</body>
+      <head>
+        <meta http-equiv="refresh" content="0; url={deep}" />
+      </head>
+      <body>Redirecting…</body>
     </html>
-    """)
+    """
