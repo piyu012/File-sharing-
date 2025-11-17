@@ -1,15 +1,16 @@
 import os, hmac, hashlib, time, asyncio, requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
-from bot import Bot   # <-- USE YOUR OLD BOT HERE
+from bot import Bot  # <-- USE YOUR OLD BOT HERE
 
 HMAC_SECRET = os.getenv("HMAC_SECRET", "secret").encode()
 ADRINO_API = os.getenv("ADRINO_API")
 
+# ------- FASTAPI -------
 api = FastAPI()
 
 # ------- USE OLD BOT CLIENT -------
-bot = Bot().app   # <--- IMPORTANT
+bot = Bot()  # <-- Pyrogram Client instance
 
 # ------- SIGN -------
 def sign(data):
@@ -27,7 +28,7 @@ def short_adrinolinks(long_url):
 # ------- START / STOP -------
 @api.on_event("startup")
 async def startup_event():
-    asyncio.create_task(bot.start())
+    asyncio.create_task(bot.start())  # Start bot in background
 
 @api.on_event("shutdown")
 async def shutdown_event():
