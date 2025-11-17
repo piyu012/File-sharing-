@@ -3,11 +3,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pyrogram import Client, filters
 
+# ---------------- ENV ----------------
 HMAC_SECRET = os.getenv("HMAC_SECRET", "secret").encode()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
-ADRINO_API = os.getenv("ADRINO_API")   # Put your Adrinolinks API KEY in Render env
+ADRINO_API = os.getenv("ADRINO_API")   # Adrinolinks API KEY
 
 api = FastAPI()
 
@@ -50,10 +51,11 @@ async def start_cmd(client, message):
     payload = f"{uid}:{ts}"
     sig = sign(payload)
 
-    # ====== URL-safe encoding ======
+    # ====== URL-safe encode both payload & sig ======
     encoded_payload = urllib.parse.quote(payload)
+    encoded_sig = urllib.parse.quote(sig)
 
-    long_link = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/watch?payload={encoded_payload}&sig={sig}"
+    long_link = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/watch?payload={encoded_payload}&sig={encoded_sig}"
 
     # --------- SHORTEN USING ADRINOLINKS ----------
     short_url = short_adrinolinks(long_link)
@@ -65,8 +67,9 @@ async def start_cmd(client, message):
 # ---------------- WATCH PAGE ----------------
 @api.get("/watch", response_class=HTMLResponse)
 async def watch(payload: str, sig: str):
-    # Decode payload
+    # Decode payload & sig
     payload = urllib.parse.unquote(payload)
+    sig = urllib.parse.unquote(sig)
 
     if not hmac.compare_digest(sign(payload), sig):
         raise HTTPException(401, "Invalid Signature")
@@ -89,8 +92,9 @@ async def watch(payload: str, sig: str):
 # ---------------- CALLBACK ----------------
 @api.get("/callback")
 async def callback(payload: str, sig: str):
-    # Decode payload
+    # Decode payload & sig
     payload = urllib.parse.unquote(payload)
+    sig = urllib.parse.unquote(sig)
 
     if not hmac.compare_digest(sign(payload), sig):
         raise HTTPException(401, "Invalid Signature")
