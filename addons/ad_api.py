@@ -10,8 +10,9 @@ HMAC_SECRET = os.getenv("HMAC_SECRET", "secret").encode()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
-ADRINO_API = os.getenv("ADRINO_API")
-MONGO_URI = os.getenv("MONGO_URI")  # mongodb+srv://username:password@cluster/db
+ADRINO_API = os.getenv("ADRINO_API")   # Adrinolinks API KEY
+MONGO_URI = os.getenv("MONGO_URI")     # MongoDB URI
+DB_NAME = "filesharebott"               # Explicit database name
 
 api = FastAPI()
 
@@ -25,7 +26,7 @@ bot = Client(
 
 # ---------------- MongoDB ----------------
 mongo = AsyncIOMotorClient(MONGO_URI)
-db = mongo.get_default_database()
+db = mongo[DB_NAME]                     # <-- Explicit DB name
 tokens_col = db.tokens
 
 # ---------------- HMAC SIGN ----------------
