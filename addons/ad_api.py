@@ -111,7 +111,7 @@ async def start_cmd(client, message):
     )
 
 # ============================================================
-#                     WATCH PAGE
+#                     WATCH PAGE (NO WAIT)
 # ============================================================
 @api.get("/watch", response_class=HTMLResponse)
 async def watch(data: str):
@@ -129,16 +129,14 @@ async def watch(data: str):
     if doc["expires_at"] < now:
         raise HTTPException(403, "Token expired")
 
+    # 🔥 NO WAIT PAGE → DIRECT REDIRECT
     return f"""
     <html>
+    <head>
+      <meta http-equiv="refresh" content="0; url=/callback?data={data}" />
+    </head>
     <body>
-      <h2>Ad चल रहा है…</h2>
-      <p>कृपया 6 seconds wait करें…</p>
-      <script>
-      setTimeout(function(){{
-          window.location.href="/callback?data={data}";
-      }},6000);
-      </script>
+      Redirecting…
     </body>
     </html>
     """
@@ -159,12 +157,10 @@ async def callback(data: str):
         raise HTTPException(404, "Token not found")
 
     now = datetime.utcnow()
-
     if doc["expires_at"] < now:
         raise HTTPException(403, "Token expired")
 
     uid, ts = payload.split(":")
-    token_value = str(int(time.time()))  # Token value
 
     # Update DB
     await tokens_col.update_one(
@@ -187,21 +183,24 @@ async def callback(data: str):
     except:
         pass
 
-    # Send token to user
-    await bot.send_message(int(uid), f"🎉 आपका Token:\n\n`{token_value}`")
+    # -----------------------------------------------
+    # ✔ USER ONLY GETS SUCCESS MESSAGE (NO TOKEN)
+    # -----------------------------------------------
+    await bot.send_message(
+        int(uid),
+        "✅ Your token successfully verified and valid for: 12 Hour"
+    )
 
-    # ------------------------------------------------------
-    # 🔥 AUTO REDIRECT TO TELEGRAM AFTER ACTIVATION
-    # ------------------------------------------------------
-    deep_link = f"tg://resolve?domain={BOT_USERNAME}&start={token_value}"
+    # -----------------------------------------------
+    # 🔥 Auto redirect to telegram start=done
+    # -----------------------------------------------
+    deep_link = f"tg://resolve?domain={BOT_USERNAME}&start=done"
 
     return HTMLResponse(f"""
     <html>
     <head>
-    <meta http-equiv="refresh" content="0; url={deep_link}" />
+      <meta http-equiv="refresh" content="0; url={deep_link}" />
     </head>
-    <body>
-    Redirecting to Telegram…
-    </body>
+    <body>Redirecting to Telegram…</body>
     </html>
     """)
