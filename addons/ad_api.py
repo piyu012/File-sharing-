@@ -10,7 +10,8 @@ ADRINO_API = os.getenv("ADRINO_API")
 api = FastAPI()
 
 # ------- USE OLD BOT CLIENT -------
-bot = Bot()  # <-- Pyrogram Client instance
+bot = Bot()  # <-- Pyrogram Client instance only
+# DO NOT start internal web server in bot.py to avoid port conflict
 
 # ------- SIGN -------
 def sign(data):
@@ -28,7 +29,8 @@ def short_adrinolinks(long_url):
 # ------- START / STOP -------
 @api.on_event("startup")
 async def startup_event():
-    asyncio.create_task(bot.start())  # Start bot in background
+    # Bot start in background
+    asyncio.create_task(bot.start())
 
 @api.on_event("shutdown")
 async def shutdown_event():
@@ -42,14 +44,11 @@ async def start_cmd(client, message):
 
     uid = message.from_user.id
     ts = int(time.time())
-
     payload = f"{uid}:{ts}"
     sig = sign(payload)
 
     hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME")
-
     long_link = f"https://{hostname}/watch?payload={payload}&sig={sig}"
-
     short_url = short_adrinolinks(long_link)
 
     await message.reply_text(f"👉 Your Ad Link:\n{short_url}")
