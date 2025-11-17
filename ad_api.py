@@ -71,7 +71,7 @@ async def start_cmd(client, message):
     uid = message.from_user.id
     now = datetime.utcnow()
 
-    # Check token active?
+    # Check if token is active
     active_token = await tokens_col.find_one({
         "uid": uid,
         "used": True,
@@ -79,28 +79,23 @@ async def start_cmd(client, message):
     })
 
     if active_token:
-        return await message.reply_text(
-            "🎉 आपका Ad Token Already Active है!\n"
-            "👉 बिना Ad देखे बॉट यूज़ कर सकते हो।"
+        # Token active → normal welcome message
+        text = (
+            f"🎉 स्वागत है @{message.from_user.username}!\n\n"
+            "आपका Ad Token पहले से एक्टिव है, आप बिना Ad देखे बॉट यूज़ कर सकते हो."
         )
-
-    # Token Expired → show button
-    btn = InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    "Click Here (Watch Ad)",
-                    url=f"https://{HOST}/gen?uid={uid}"
-                )
-            ]
-        ]
-    )
-
-    await message.reply_text(
-        "❌ आपका Ads Token Expire हो गया है!\n\n"
-        "👉 सिर्फ 1 Ad देखो और 12 घंटे तक पूरा bot फ्री में यूज़ करो!",
-        reply_markup=btn
-    )
+        await message.reply_text(text)
+    else:
+        # Token missing/expired → show ad button
+        watch_url = f"https://{HOST}/gen?uid={uid}"
+        btn = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Click Here (Watch Ad)", url=watch_url)]]
+        )
+        text = (
+            "❌ आपका Ads Token Expire हो गया है या नहीं है!\n\n"
+            "👉 सिर्फ 1 Ad देखो और पूरा bot 12 घंटे के लिए Unlock!"
+        )
+        await message.reply_text(text, reply_markup=btn)
 
 
 # ============================================================
