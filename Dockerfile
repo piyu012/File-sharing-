@@ -1,27 +1,19 @@
-# Use latest Python slim image
 FROM python:3.11-slim
 
-# Set working directory
+# Create non-root user
+RUN useradd -ms /bin/bash appuser
+
 WORKDIR /app
-
-# Copy requirements
-COPY requirements.txt .
-
-# Upgrade pip and install requirements
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Install supervisor
-RUN apt-get update && apt-get install -y supervisor
-
-# Create logs directory
-RUN mkdir -p /app/logs
-
-# Copy all project files
 COPY . .
 
-# Copy supervisord config
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Start supervisor
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# Make logs directory
+RUN mkdir -p /app/logs && chown -R appuser:appuser /app/logs
+
+# Switch to non-root user
+USER appuser
+
+# Start supervisord
+CMD ["supervisord", "-c", "/app/supervisord.conf"]
