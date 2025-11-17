@@ -4,7 +4,6 @@ from bot import Bot
 from config import ADMINS
 from helper_func import encode, get_message_id
 
-from plugins.shortener_shrinkme import shrinkme_shorten # ensure this file exists and env key set [SHRINKME_API_KEY]
 
 @Bot.on_message(filters.private & filters.user(ADMINS) & filters.command('batch'))
 async def batch(client: Client, message: Message):
