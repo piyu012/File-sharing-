@@ -4,6 +4,7 @@ from fastapi.responses import HTMLResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timedelta
 from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # ---------------- ENV ----------------
 HMAC_SECRET = os.getenv("HMAC_SECRET", "secret").encode()
@@ -33,9 +34,11 @@ mongo = AsyncIOMotorClient(MONGO_URI)
 db = mongo[DB_NAME]
 tokens_col = db.tokens
 
+
 # ---------------- HMAC SIGN ----------------
 def sign(data):
     return hmac.new(HMAC_SECRET, data.encode(), hashlib.sha256).hexdigest()
+
 
 # ---------------- SHORTENER ----------------
 def short_adrinolinks(long_url):
@@ -47,15 +50,18 @@ def short_adrinolinks(long_url):
     except:
         return long_url
 
+
 # ---------------- BOT START ----------------
 @api.on_event("startup")
 async def startup():
     asyncio.create_task(bot.start())
 
+
 # ---------------- BOT STOP ----------------
 @api.on_event("shutdown")
 async def shutdown():
     await bot.stop()
+
 
 # ============================================================
 #     USER STARTS /start
@@ -65,7 +71,7 @@ async def start_cmd(client, message):
     uid = message.from_user.id
     now = datetime.utcnow()
 
-    # Check active token
+    # Check token active?
     active_token = await tokens_col.find_one({
         "uid": uid,
         "used": True,
@@ -74,27 +80,31 @@ async def start_cmd(client, message):
 
     if active_token:
         return await message.reply_text(
-            "🎉 आपका Ad Token पहले से एक्टिव है!\n"
-            "आप बिना ad देखे बॉट इस्तेमाल कर सकते हो।"
+            "🎉 आपका Ad Token Already Active है!\n"
+            "👉 बिना Ad देखे बॉट यूज़ कर सकते हो।"
         )
 
-    # Token expired → show ad link
-    watch_url = f"https://{HOST}/gen?uid={uid}"
+    # Token Expired → show button
+    btn = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "Click Here (Watch Ad)",
+                    url=f"https://{HOST}/gen?uid={uid}"
+                )
+            ]
+        ]
+    )
 
     await message.reply_text(
         "❌ आपका Ads Token Expire हो गया है!\n\n"
-        "👉 सिर्फ 1 Ad देखो और पूरा bot 12 घंटे के लिए Unlock!",
-        reply_markup={
-            "inline_keyboard": [
-                [
-                    {"text": "Click Here (Watch Ad)", "url": watch_url}
-                ]
-            ]
-        }
+        "👉 सिर्फ 1 Ad देखो और 12 घंटे तक पूरा bot फ्री में यूज़ करो!",
+        reply_markup=btn
     )
 
+
 # ============================================================
-#     /gen → new token generate
+#     /gen → generate token
 # ============================================================
 @api.get("/gen", response_class=HTMLResponse)
 async def gen(uid: int = Query(...)):
@@ -105,7 +115,7 @@ async def gen(uid: int = Query(...)):
 
     expire_time = now + timedelta(hours=12)
 
-    # Save token in DB
+    # Save token
     await tokens_col.insert_one({
         "uid": uid,
         "payload": payload,
@@ -122,14 +132,15 @@ async def gen(uid: int = Query(...)):
     short = short_adrinolinks(watch_url)
 
     return f"""
-        <html><body>
+    <html><body>
         <h2>Your Ad Link</h2>
         <a href="{short}">{short}</a>
-        </body></html>
+    </body></html>
     """
 
+
 # ============================================================
-#     WATCH → redirect to callback
+#     WATCH → redirect
 # ============================================================
 @api.get("/watch", response_class=HTMLResponse)
 async def watch(data: str = Query(...)):
@@ -138,12 +149,13 @@ async def watch(data: str = Query(...)):
       <head>
         <meta http-equiv="refresh" content="0; url=/callback?data={data}" />
       </head>
-      <body>Loading Ad…</body>
+      <body>Loading Ad...</body>
     </html>
     """
 
+
 # ============================================================
-#     CALLBACK → VERIFY + REDIRECT TG
+#     CALLBACK → VERIFY + Activate token
 # ============================================================
 @api.get("/callback", response_class=HTMLResponse)
 async def callback(data: str = Query(...)):
@@ -151,9 +163,9 @@ async def callback(data: str = Query(...)):
         decoded = base64.urlsafe_b64decode(data).decode()
         payload, sig = decoded.rsplit(":", 1)
     except:
-        raise HTTPException(400, "Invalid token format")
+        raise HTTPException(400, "Invalid data format")
 
-    # Check DB record
+    # Find token
     doc = await tokens_col.find_one({"payload": payload, "sig": sig})
     if not doc:
         raise HTTPException(404, "Token not found")
@@ -172,8 +184,8 @@ async def callback(data: str = Query(...)):
         }}
     )
 
-    # Notify user on Telegram
-    await bot.send_message(uid, "✅ आपका Ad Token अब 12 घंटे के लिए एक्टिव हो गया!")
+    # Notify user
+    await bot.send_message(uid, "✅ आपका Ad Token 12 घंटे के लिए Activate हो गया!")
 
     deep = f"tg://resolve?domain={BOT_USERNAME}&start=done"
 
@@ -182,6 +194,6 @@ async def callback(data: str = Query(...)):
       <head>
         <meta http-equiv="refresh" content="0; url={deep}" />
       </head>
-      <body>Redirecting to Telegram…</body>
+      <body>Redirecting...</body>
     </html>
     """
