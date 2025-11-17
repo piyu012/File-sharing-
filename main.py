@@ -1,11 +1,21 @@
 import asyncio
-import uvicorn
-from addons.ad_api import bot, api  # FastAPI app + Pyrogram bot
+from fastapi import FastAPI
+from bot import Bot
 
-async def start_bot():
-    await bot.start()  # bot background me start
+api = FastAPI()
+bot = Bot()
 
-if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.create_task(start_bot())
-    uvicorn.run(api, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+@api.on_event("startup")
+async def startup():
+    # Start old bot in background
+    asyncio.create_task(bot.start())
+
+@api.on_event("shutdown")
+async def shutdown():
+    # Graceful stop
+    await bot.stop()
+
+# Optional: friendly homepage
+@api.get("/")
+async def home():
+    return {"message": "Old bot running in background!"}
