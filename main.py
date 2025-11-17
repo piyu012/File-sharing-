@@ -1,3 +1,4 @@
+import os
 import asyncio
 from bot import Bot
 from ad_api import api
