@@ -70,7 +70,7 @@ async def watch(data: str):
     # Decode Base64
     try:
         decoded = base64.urlsafe_b64decode(data.encode()).decode()
-        payload, sig = decoded.split(":")
+        payload, sig = decoded.rsplit(":", 1)  # FIX: split only on last colon
     except:
         raise HTTPException(400, "Invalid data")
 
@@ -98,7 +98,7 @@ async def callback(data: str):
     # Decode Base64
     try:
         decoded = base64.urlsafe_b64decode(data.encode()).decode()
-        payload, sig = decoded.split(":")
+        payload, sig = decoded.rsplit(":", 1)  # FIX: split only on last colon
     except:
         raise HTTPException(400, "Invalid data")
 
