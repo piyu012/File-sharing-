@@ -11,5 +11,9 @@ jinja2
 python-multipart
 pydantic
 humanize
+aiogram==3.4.1
+aiosqlite
+requests
+python-dotenv
 
 
