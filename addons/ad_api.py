@@ -5,15 +5,20 @@ from pyrogram import Client, filters
 
 HMAC_SECRET = os.getenv("HMAC_SECRET", "secret").encode()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+
 api = FastAPI()
 
+# ---------------- Correct Pyrogram Client ----------------
 bot = Client(
     "adbot",
-    api_id=int(os.getenv("API_ID")),
-    api_hash=os.getenv("API_HASH")),
+    api_id=API_ID,
+    api_hash=API_HASH,
     bot_token=BOT_TOKEN
 )
 
+# ---------------- HMAC SIGN ----------------
 def sign(data):
     return hmac.new(HMAC_SECRET, data.encode(), hashlib.sha256).hexdigest()
 
@@ -33,7 +38,17 @@ async def shutdown_event():
 
 @bot.on_message(filters.command("start"))
 async def start_cmd(client, message):
-    await message.reply_text("👋 Welcome!\n\nClick /watch to earn tokens.")
+    uid = message.from_user.id
+    ts = int(time.time())
+
+    payload = f"{uid}:{ts}"
+    sig = sign(payload)
+
+    link = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/watch?payload={payload}&sig={sig}"
+
+    await message.reply_text(
+        f"👋 Welcome!\n\n👉 Click below to get your token:\n\n{link}"
+    )
 
 # ------------------- FASTAPI ROUTES ------------------
 
