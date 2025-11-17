@@ -13,6 +13,7 @@ API_HASH = os.getenv("API_HASH")
 ADRINO_API = os.getenv("ADRINO_API")   # Adrinolinks API KEY
 MONGO_URI = os.getenv("MONGO_URI")     # MongoDB URI
 DB_NAME = "filesharebott"
+ADMIN_ID = int(os.getenv("ADMIN_ID"))  # Telegram ID for admin notifications
 
 api = FastAPI()
 
@@ -81,8 +82,18 @@ async def start_cmd(client, message):
             "sig": sig,
             "created_at": now,
             "used": True,
+            "activated_at": now,
             "expires_at": expire_time
         })
+
+        # ---------------- Notify admin ----------------
+        try:
+            await bot.send_message(
+                ADMIN_ID,
+                f"✅ Token activated for user {uid}\nValid for 12 hours.\nPayload: {payload}"
+            )
+        except:
+            pass
 
     # Encode Base64
     payload_sig = f"{payload}:{sig}"
@@ -145,11 +156,20 @@ async def callback(data: str):
     uid, ts = payload.split(":")
     token = str(int(time.time()))
 
-    # Update expires_at if needed
+    # Update token expiry if needed
     await tokens_col.update_one(
         {"_id": token_doc["_id"]},
         {"$set": {"used": True, "expires_at": now + timedelta(hours=12)}}
     )
+
+    # ---------------- Notify admin ----------------
+    try:
+        await bot.send_message(
+            ADMIN_ID,
+            f"🔔 Token used by user {uid}\nToken valid until: {now + timedelta(hours=12)}"
+        )
+    except:
+        pass
 
     await bot.send_message(int(uid), f"🎉 Your Token:\n\n`{token}`")
     return {"ok": True, "token": token}
