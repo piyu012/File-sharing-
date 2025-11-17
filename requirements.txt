@@ -7,6 +7,9 @@ aiohttp
 motor
 fastapi
 uvicorn
+jinja2
+python-multipart
+pydantic
 humanize
 
 
