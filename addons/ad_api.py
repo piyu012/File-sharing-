@@ -1,4 +1,4 @@
-import os, hmac, hashlib, time, asyncio, requests
+import os, hmac, hashlib, time, asyncio, requests, urllib.parse
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pyrogram import Client, filters
@@ -33,7 +33,6 @@ def short_adrinolinks(long_url):
         return long_url
 
 # ---------------- BOT START / STOP ----------------
-
 @api.on_event("startup")
 async def startup_event():
     asyncio.create_task(bot.start())
@@ -43,7 +42,6 @@ async def shutdown_event():
     await bot.stop()
 
 # ---------------- BOT HANDLER ----------------
-
 @bot.on_message(filters.command("start"))
 async def start_cmd(client, message):
     uid = message.from_user.id
@@ -52,7 +50,10 @@ async def start_cmd(client, message):
     payload = f"{uid}:{ts}"
     sig = sign(payload)
 
-    long_link = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/watch?payload={payload}&sig={sig}"
+    # ====== URL-safe encoding ======
+    encoded_payload = urllib.parse.quote(payload)
+
+    long_link = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/watch?payload={encoded_payload}&sig={sig}"
 
     # --------- SHORTEN USING ADRINOLINKS ----------
     short_url = short_adrinolinks(long_link)
@@ -62,9 +63,11 @@ async def start_cmd(client, message):
     )
 
 # ---------------- WATCH PAGE ----------------
-
 @api.get("/watch", response_class=HTMLResponse)
 async def watch(payload: str, sig: str):
+    # Decode payload
+    payload = urllib.parse.unquote(payload)
+
     if not hmac.compare_digest(sign(payload), sig):
         raise HTTPException(401, "Invalid Signature")
 
@@ -84,9 +87,11 @@ async def watch(payload: str, sig: str):
     """
 
 # ---------------- CALLBACK ----------------
-
 @api.get("/callback")
 async def callback(payload: str, sig: str):
+    # Decode payload
+    payload = urllib.parse.unquote(payload)
+
     if not hmac.compare_digest(sign(payload), sig):
         raise HTTPException(401, "Invalid Signature")
 
