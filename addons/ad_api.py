@@ -14,6 +14,7 @@ ADRINO_API = os.getenv("ADRINO_API")
 MONGO_URI = os.getenv("MONGO_URI")
 DB_NAME = "filesharebott"
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
+BOT_USERNAME = os.getenv("BOT_USERNAME")   # <-- ADD THIS IN .env
 
 api = FastAPI()
 
@@ -163,7 +164,7 @@ async def callback(data: str):
         raise HTTPException(403, "Token expired")
 
     uid, ts = payload.split(":")
-    token_value = str(int(time.time()))  # Simple token
+    token_value = str(int(time.time()))  # Token value
 
     # Update DB
     await tokens_col.update_one(
@@ -189,4 +190,18 @@ async def callback(data: str):
     # Send token to user
     await bot.send_message(int(uid), f"🎉 आपका Token:\n\n`{token_value}`")
 
-    return {"ok": True, "token": token_value}
+    # ------------------------------------------------------
+    # 🔥 AUTO REDIRECT TO TELEGRAM AFTER ACTIVATION
+    # ------------------------------------------------------
+    deep_link = f"tg://resolve?domain={BOT_USERNAME}&start={token_value}"
+
+    return HTMLResponse(f"""
+    <html>
+    <head>
+    <meta http-equiv="refresh" content="0; url={deep_link}" />
+    </head>
+    <body>
+    Redirecting to Telegram…
+    </body>
+    </html>
+    """)
