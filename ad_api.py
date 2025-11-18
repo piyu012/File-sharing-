@@ -1,6 +1,6 @@
 import os, hmac, hashlib, time, asyncio, requests, base64
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timedelta
 from pyrogram import Client, filters
@@ -55,6 +55,23 @@ async def startup():
 @api.on_event("shutdown")
 async def shutdown():
     await bot.stop()
+
+# ---------------- ROOT & HEALTH ----------------
+@api.get("/", response_class=HTMLResponse)
+async def root():
+    return f"""
+    <html>
+        <head><title>File Sharing Bot</title></head>
+        <body>
+            <h1>🎉 File Sharing Bot is Running!</h1>
+            <p>Use <a href="/gen?uid=YOUR_USER_ID">/gen?uid=YOUR_USER_ID</a> to generate a token.</p>
+        </body>
+    </html>
+    """
+
+@api.get("/health")
+async def health():
+    return JSONResponse({"status": "ok", "time": datetime.utcnow().isoformat()})
 
 # ============================================================
 #     USER STARTS /start
