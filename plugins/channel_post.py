@@ -1,100 +1,58 @@
-import asyncio
-from pyrogram import filters, Client
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+# channel_post.py
+import asyncio, traceback
+from pyrogram import filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import FloodWait, MessageNotModified, RPCError
-from bot import Bot
-from config import ADMINS, DISABLE_CHANNEL_BUTTON
+from bot import bot
+from config import ADMIN_ID, CHANNEL_ID
 from helper_func import encode
-import traceback
 
-@Bot.on_message(filters.private & filters.user(ADMINS) & ~filters.command(
-    ['start','users','broadcast','batch','genlink','stats']))
-async def channel_post(client: Client, message: Message):
-    # quick reply so user sees bot is working
-    reply_text = await message.reply_text("Please Wait...!", quote=True)
+ADMINS = [ADMIN_ID] if ADMIN_ID else []
 
-    # 1) db_channel check
-    if not getattr(client, "db_channel", None):
-        await reply_text.edit_text("⚠️ Database Channel not set!")
+@bot.on_message(filters.private & filters.user(ADMINS) & ~filters.command(['start','genlink']))
+async def channel_post(client, message):
+    reply = await message.reply_text("Please wait...", quote=True)
+
+    # ensure channel configured
+    if CHANNEL_ID == 0:
+        await reply.edit_text("⚠️ CHANNEL_ID not set in ENV. Contact admin.")
         return
 
-    # 2) quick permission check (try a harmless action)
-    try:
-        # try to get channel id to ensure it's valid and bot has access
-        _ = client.db_channel.id
-    except Exception as e:
-        await reply_text.edit_text("⚠️ Invalid channel config.")
-        return
-
-    # 3) Attempt to copy - with FloodWait handling
-    try:
-        post_message = await message.copy(chat_id=client.db_channel.id, disable_notification=True)
-
-    except FloodWait as e:
-        # wait and retry once
-        await asyncio.sleep(e.x)
+    # ensure bot has channel
+    if not getattr(bot, "db_channel", None):
         try:
-            post_message = await message.copy(chat_id=client.db_channel.id, disable_notification=True)
-        except Exception as e2:
-            err_text = f"Copy failed after FloodWait: {e2.__class__.__name__}: {str(e2)[:250]}"
-            await _report_and_reply(client, reply_text, err_text, e2)
+            # try to fetch channel object
+            bot.db_channel = await bot.get_chat(CHANNEL_ID)
+            print("Loaded db_channel:", bot.db_channel.id)
+        except Exception as e:
+            print("Failed to load db_channel:", e)
+            await reply.edit_text("⚠️ Unable to access channel. Check bot permissions.")
             return
 
+    try:
+        post = await message.copy(chat_id=bot.db_channel.id, disable_notification=True)
+    except FloodWait as e:
+        await asyncio.sleep(e.x)
+        post = await message.copy(chat_id=bot.db_channel.id, disable_notification=True)
     except Exception as e:
-        err_text = f"Copy failed: {e.__class__.__name__}: {str(e)[:250]}"
-        await _report_and_reply(client, reply_text, err_text, e)
+        traceback.print_exc()
+        await reply.edit_text("Something Went Wrong..! (copy failed)")
         return
 
-    # 4) Create link and edit/reply
+    converted = post.id * abs(bot.db_channel.id)
+    token_str = f"file-{converted}"
+    b64 = await encode(token_str)
+    link = f"https://t.me/{bot.username}?start={b64}"
+
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 Share URL", url=f"https://telegram.me/share/url?url={link}")]])
+
     try:
-        converted_id = post_message.id * abs(client.db_channel.id)
-        string = f"get-{converted_id}"
-        base64_string = await encode(string)
-        link = f"https://t.me/{client.username}?start={base64_string}"
-
-        reply_markup = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("🔁 Share URL", url=f'https://telegram.me/share/url?url={link}')]]
-        )
-
-        try:
-            await reply_text.edit(
-                "<b>Here Is Your Link</b>\n\n" + link,
-                reply_markup=reply_markup,
-                disable_web_page_preview=True
-            )
-        except MessageNotModified:
-            pass
-
-        if not DISABLE_CHANNEL_BUTTON:
-            try:
-                await post_message.edit_reply_markup(reply_markup)
-            except Exception as e:
-                # Not fatal, log and continue
-                print("Edit Reply Markup Failed:", e)
-
-    except Exception as e:
-        err_text = f"Post/edit failed: {e.__class__.__name__}: {str(e)[:250]}"
-        await _report_and_reply(client, reply_text, err_text, e)
-        return
-
-
-# helper to report error to admin and edit user's message with friendly hint
-async def _report_and_reply(client: Client, reply_obj, short_err: str, exc: Exception):
-    # print full traceback to server logs
-    print("---- channel_post error ----")
-    traceback.print_exc()
-
-    # try send detailed error to first admin (if available)
-    try:
-        admin_id = ADMINS[0] if isinstance(ADMINS, (list, tuple)) and len(ADMINS) > 0 else None
-        if admin_id:
-            # send concise error to admin (avoid huge trace in message)
-            await client.send_message(admin_id, f"Channel post error: {short_err}")
-    except Exception as e:
-        print("Failed sending error to admin:", e)
-
-    # friendly reply to user
-    try:
-        await reply_obj.edit_text("Something Went Wrong..! (Admin notified)\nTry sending plain text first.")
+        await reply.edit_text(f"<b>Here Is Your Link</b>\n\n{link}", reply_markup=kb, disable_web_page_preview=True)
     except MessageNotModified:
         pass
+
+    # try edit post buttons
+    try:
+        await post.edit_reply_markup(kb)
+    except Exception as e:
+        print("edit_reply_markup failed:", e)
