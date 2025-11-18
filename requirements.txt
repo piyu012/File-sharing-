@@ -1,7 +1,6 @@
-fastapi
-uvicorn[standard]
-motor
-pyrogram==1.6.4
+pyrogram==2.0.106
 tgcrypto
-requests
-python-dotenv
+aiohttp
+pyromod
+motor
+uvicorn
