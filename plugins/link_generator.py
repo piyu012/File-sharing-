@@ -56,12 +56,6 @@ Or Send The DB Channel Post Link""",
     base64_string = await encode(string)
     link = f"https://t.me/{client.username}?start={base64_string}"
 
-    # SHORTEN HERE
-    try:
-        link = await shrinkme_shorten(link)
-    except Exception:
-        pass
-
     reply_markup = InlineKeyboardMarkup(
         [[InlineKeyboardButton("🔁 Share URL", url=f'https://telegram.me/share/url?url={link}')]]
     )
@@ -94,12 +88,6 @@ Or Send The DB Channel Post link""",
 
     base64_string = await encode(f"get-{msg_id * abs(client.db_channel.id)}")
     link = f"https://t.me/{client.username}?start={base64_string}"
-
-    # SHORTEN HERE
-    try:
-        link = await shrinkme_shorten(link)
-    except Exception:
-        pass
 
     reply_markup = InlineKeyboardMarkup(
         [[InlineKeyboardButton("🔁 Share URL", url=f'https://telegram.me/share/url?url={link}')]]
