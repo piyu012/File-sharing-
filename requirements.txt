@@ -4,3 +4,4 @@ aiohttp
 pyromod
 motor
 uvicorn
+requests
