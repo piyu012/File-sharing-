@@ -5,6 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timedelta
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.errors import MessageNotModified
 
 # ---------------- ENV ----------------
 HMAC_SECRET = os.getenv("HMAC_SECRET", "secret").encode()
@@ -17,6 +18,7 @@ DB_NAME = "filesharebott"
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 BOT_USERNAME = os.getenv("BOT_USERNAME")
 HOST = os.getenv("RENDER_EXTERNAL_HOSTNAME", "localhost")
+CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))  # DB Channel
 
 api = FastAPI()
 
@@ -49,6 +51,13 @@ def short_adrinolinks(long_url):
 # ---------------- BOT START ----------------
 @api.on_event("startup")
 async def startup():
+    # Assign db_channel to avoid 'Database Channel not set!' errors
+    if CHANNEL_ID == 0:
+        print("⚠️ Warning: CHANNEL_ID not set in ENV! channel_post.py won’t work properly.")
+        bot.db_channel = None
+    else:
+        bot.db_channel = type("Channel", (), {"id": CHANNEL_ID})()
+        print(f"✅ Bot db_channel set to {CHANNEL_ID}")
     asyncio.create_task(bot.start())
 
 # ---------------- BOT STOP ----------------
@@ -90,21 +99,25 @@ async def start_cmd(client, message):
     })
 
     if token:
-        # Active token → welcome message
         text = (
             f"🎉 स्वागत है @{username}!\n\n"
             "आपका Ad Token पहले से एक्टिव है, आप बिना Ad देखे बॉट इस्तेमाल कर सकते हो।"
         )
-        await message.reply_text(text)
+        try:
+            await message.reply_text(text)
+        except MessageNotModified:
+            pass
     else:
-        # Missing or expired token → show Ad button
         watch_url = f"https://{HOST}/gen?uid={uid}"
         btn = InlineKeyboardMarkup([[InlineKeyboardButton("Click Here (Watch Ad)", url=watch_url)]])
         text = (
             "❌ आपका Ads Token Expire हो गया है या मौजूद नहीं है!\n\n"
             "👉 सिर्फ 1 Ad देखो और पूरा bot 12 घंटे के लिए Unlock!"
         )
-        await message.reply_text(text, reply_markup=btn)
+        try:
+            await message.reply_text(text, reply_markup=btn)
+        except MessageNotModified:
+            pass
 
 # ============================================================
 #     /gen → generate token
@@ -181,8 +194,10 @@ async def callback(data: str = Query(...)):
         }}
     )
 
-    # Notify user
-    await bot.send_message(uid, "✅ आपका Ad Token 12 घंटे के लिए Activate हो गया!")
+    try:
+        await bot.send_message(uid, "✅ आपका Ad Token 12 घंटे के लिए Activate हो गया!")
+    except MessageNotModified:
+        pass
 
     deep = f"tg://resolve?domain={BOT_USERNAME}&start=done"
 
