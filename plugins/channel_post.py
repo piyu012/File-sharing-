@@ -1,10 +1,11 @@
+import asyncio
+import os
 from pyrogram import filters, Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import FloodWait, MessageNotModified
 from bot import Bot
 from config import ADMINS, DISABLE_CHANNEL_BUTTON
 from helper_func import encode
-import os
 
 # ---------------- SET DB CHANNEL FROM ENV ----------------
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))  # Render env variable
@@ -12,7 +13,7 @@ CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))  # Render env variable
 if CHANNEL_ID == 0:
     print("⚠️ Warning: CHANNEL_ID not set in ENV!")
 else:
-    # Synchronous assign to avoid "Database Channel not set" warning
+    # Assign to bot instance safely
     Bot.db_channel = type("Channel", (), {"id": CHANNEL_ID})()
     print(f"✅ Bot db_channel set to {CHANNEL_ID}")
 
@@ -39,6 +40,7 @@ async def channel_post(client: Client, message: Message):
             pass
         return
 
+    # Generate shareable link
     converted_id = post_message.id * abs(client.db_channel.id)
     string = f"get-{converted_id}"
     base64_string = await encode(string)
@@ -84,9 +86,3 @@ async def new_post(client: Client, message: Message):
     except Exception as e:
         print("Edit Reply Markup Failed:", e)
         pass
-
-# Jishu Developer 
-# Don't Remove Credit 🥺
-# Telegram Channel @Madflix_Bots
-# Backup Channel @JishuBotz
-# Developer @JishuDeveloper
