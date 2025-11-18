@@ -18,7 +18,7 @@ DB_NAME = "filesharebott"
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 BOT_USERNAME = os.getenv("BOT_USERNAME")
 HOST = os.getenv("RENDER_EXTERNAL_HOSTNAME", "localhost")
-CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))  # DB Channel
+CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))
 
 api = FastAPI()
 
@@ -36,9 +36,11 @@ mongo = AsyncIOMotorClient(MONGO_URI)
 db = mongo[DB_NAME]
 tokens_col = db.tokens
 
+
 # ---------------- HMAC SIGN ----------------
 def sign(data):
     return hmac.new(HMAC_SECRET, data.encode(), hashlib.sha256).hexdigest()
+
 
 # ---------------- SHORTENER ----------------
 def short_adrinolinks(long_url):
@@ -48,22 +50,30 @@ def short_adrinolinks(long_url):
     except:
         return long_url
 
-# ---------------- BOT START ----------------
+
+# ---------------- BOT START (UPDATED) ----------------
 @api.on_event("startup")
 async def startup():
-    # Assign db_channel to avoid 'Database Channel not set!' errors
+    print("🔄 Starting bot...")
+
+    # 🔥 First start bot completely
+    await bot.start()
+
+    # 🔥 Now safely assign db_channel
     if CHANNEL_ID == 0:
-        print("⚠️ Warning: CHANNEL_ID not set in ENV! channel_post.py won’t work properly.")
+        print("⚠️ CHANNEL_ID missing in ENV! channel_post.py won’t work properly.")
         bot.db_channel = None
     else:
         bot.db_channel = type("Channel", (), {"id": CHANNEL_ID})()
         print(f"✅ Bot db_channel set to {CHANNEL_ID}")
-    asyncio.create_task(bot.start())
 
-# ---------------- BOT STOP ----------------
+    print("🚀 Bot started successfully!")
+
+
 @api.on_event("shutdown")
 async def shutdown():
     await bot.stop()
+
 
 # ---------------- ROOT & HEALTH ----------------
 @api.get("/", response_class=HTMLResponse)
@@ -78,9 +88,11 @@ async def root():
     </html>
     """
 
+
 @api.get("/health")
 async def health():
     return JSONResponse({"status": "ok", "time": datetime.utcnow().isoformat()})
+
 
 # ============================================================
 #     USER STARTS /start
@@ -91,7 +103,6 @@ async def start_cmd(client, message):
     username = getattr(message.from_user, "username", str(uid))
     now = datetime.utcnow()
 
-    # Check if token is active
     token = await tokens_col.find_one({
         "uid": uid,
         "used": True,
@@ -118,6 +129,7 @@ async def start_cmd(client, message):
             await message.reply_text(text, reply_markup=btn)
         except MessageNotModified:
             pass
+
 
 # ============================================================
 #     /gen → generate token
@@ -152,6 +164,7 @@ async def gen(uid: int = Query(...)):
     </body></html>
     """
 
+
 # ============================================================
 #     WATCH → redirect
 # ============================================================
@@ -166,8 +179,9 @@ async def watch(data: str = Query(...)):
     </html>
     """
 
+
 # ============================================================
-#     CALLBACK → VERIFY + Activate token
+#     CALLBACK → VERIFY & Activate token
 # ============================================================
 @api.get("/callback", response_class=HTMLResponse)
 async def callback(data: str = Query(...)):
