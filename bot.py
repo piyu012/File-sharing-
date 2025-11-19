@@ -6,6 +6,7 @@ from utils.auth import sign
 from utils.shortener import short_adrinolinks
 from database.mongo import tokens_col
 
+# ---------------- BOT CLIENT ----------------
 bot = Client(
     "adbot",
     api_id=API_ID,
@@ -13,6 +14,13 @@ bot = Client(
     bot_token=BOT_TOKEN
 )
 
+# Set DB channel here
+bot.db_channel = -1003450530576  # yaha aapka database channel ID
+
+# Admin list
+ADMINS = [ADMIN_ID]
+
+# ---------------- START COMMAND ----------------
 @bot.on_message(filters.command("start"))
 async def start_cmd(client, message):
     uid = message.from_user.id
