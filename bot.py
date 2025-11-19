@@ -75,10 +75,10 @@ async def start_cmd(client, message):
     uid = message.from_user.id
     text = message.text or ""
     
-    # ---------------- Admin link skip token check ----------------
-    if text.startswith("/start admin-"):
-        await message.reply_text("Admin link detected. Token check skipped.")
-        return
+    # Remove this block to allow admin links to use token normally
+    # if text.startswith("/start admin-"):
+    #     await message.reply_text("Admin link detected. Token check skipped.")
+    #     return
 
     print(f"[LOG] /start from user {uid}", flush=True)
     now = datetime.utcnow()
