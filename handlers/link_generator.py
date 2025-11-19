@@ -2,7 +2,7 @@
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from bot import bot
-from config import ADMIN_ID, DISABLE_CHANNEL_BUTTON
+from config import ADMIN_ID
 from helper_func import encode
 import asyncio
 
