@@ -73,6 +73,13 @@ async def root():
 @bot.on_message(filters.command("start"))
 async def start_cmd(client, message):
     uid = message.from_user.id
+    text = message.text or ""
+    
+    # ---------------- Admin link skip token check ----------------
+    if text.startswith("/start admin-"):
+        await message.reply_text("Admin link detected. Token check skipped.")
+        return
+
     print(f"[LOG] /start from user {uid}", flush=True)
     now = datetime.utcnow()
 
@@ -195,7 +202,8 @@ async def file_link_generator(client: Client, message: Message):
     converted_id = post_message.id * abs(bot.db_channel)
     string = f"get-{converted_id}"
     base64_string = base64.urlsafe_b64encode(string.encode()).decode()
-    link = f"https://t.me/{BOT_USERNAME}?start={base64_string}"
+    # ✅ Admin-specific link with 'admin-' prefix
+    link = f"https://t.me/{BOT_USERNAME}?start=admin-{base64_string}"
 
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("Share Link", url=f"https://telegram.me/share/url?url={link}")]])
 
