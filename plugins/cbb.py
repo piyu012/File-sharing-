@@ -7,16 +7,19 @@ async def cb_handler(client: Bot, query: CallbackQuery):
     data = query.data
     
     if data == "about":
-        text = f"Bot Name: File Sharing Bot
-
-Language: Python 3
-
-Library: Pyrogram {__version__}
-
-Server: Render
-
-Developer: @JishuDeveloper"
-        await query.message.edit_text(text=text, disable_web_page_preview=True, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Close", callback_data="close")]]))
+        text = (
+            f"Bot: File Sharing Bot
+"
+            f"Language: Python 3
+"
+            f"Library: Pyrogram {__version__}
+"
+            f"Server: Render
+"
+            f"Developer: @JishuDeveloper"
+        )
+        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("Close", callback_data="close")]])
+        await query.message.edit_text(text=text, disable_web_page_preview=True, reply_markup=reply_markup)
     
     elif data == "close":
         await query.message.delete()
