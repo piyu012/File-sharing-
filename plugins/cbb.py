@@ -1,32 +1,22 @@
 from pyrogram import __version__
 from bot import Bot
-from config import OWNER_ID
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 @Bot.on_callback_query()
 async def cb_handler(client: Bot, query: CallbackQuery):
     data = query.data
     
     if data == "about":
-        await query.message.edit_text(
-            text=f"🤖 Bot Name: File Sharing Bot
-"
-                 f"📝 Language: Python 3
-"
-                 f"📚 Library: Pyrogram {__version__}
-"
-                 f"🚀 Server: Render
-"
-                 f"🔐 Token System: Integrated
-"
-                 f"🧑‍💻 Developer: @JishuDeveloper
-"
-                 f"📢 Channel: @Madflix_Bots",
-            disable_web_page_preview=True,
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔒 Close", callback_data="close")]]
-            )
-        )
+        text = f"Bot Name: File Sharing Bot
+
+Language: Python 3
+
+Library: Pyrogram {__version__}
+
+Server: Render
+
+Developer: @JishuDeveloper"
+        await query.message.edit_text(text=text, disable_web_page_preview=True, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Close", callback_data="close")]]))
     
     elif data == "close":
         await query.message.delete()
