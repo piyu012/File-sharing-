@@ -2,7 +2,7 @@ import base64
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 from addons.database.mongo import tokens_col
-from addons.datetime import datetime
+from datetime import datetime
 
 router = APIRouter()
 
