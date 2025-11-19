@@ -1,6 +1,6 @@
 from pyrogram import Client, filters
-from addons.utils import decode_payload
-from addons.db import files_col
+from utils import decode_payload
+from db import files_col
 
 @Client.on_message(filters.command("start"))
 async def start(bot, message):
