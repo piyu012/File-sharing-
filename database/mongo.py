@@ -1,5 +1,5 @@
 from motor.motor_asyncio import AsyncIOMotorClient
-from addons.config import MONGO_URI, DB_NAME
+from config import MONGO_URI, DB_NAME
 
 mongo = AsyncIOMotorClient(MONGO_URI)
 db = mongo[DB_NAME]
