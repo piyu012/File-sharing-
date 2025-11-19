@@ -1,4 +1,5 @@
-import os, hmac, hashlib, time, asyncio, requests, base64
+import os, hmac, hashlib, time, asyncio, requests, base64, contextlib
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pyrogram import Client, filters
@@ -6,21 +7,27 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timedelta
 
-# ---------------- ENV ----------------
+# ---------------- ENV (safe) ----------------
+def require_env(name: str) -> str:
+    v = os.getenv(name)
+    if not v or v.strip() == "":
+        raise RuntimeError(f"Missing env: {name}")
+    return v
+
 HMAC_SECRET = os.getenv("HMAC_SECRET", "secret").encode()
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
-ADRINO_API = os.getenv("ADRINO_API")
-MONGO_URI = os.getenv("MONGO_URI")
+BOT_TOKEN = require_env("BOT_TOKEN")
+API_ID = int(require_env("API_ID"))
+API_HASH = require_env("API_HASH")
+ADRINO_API = os.getenv("ADRINO_API", "")
+MONGO_URI = require_env("MONGO_URI")
 DB_NAME = "filesharebott"
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
-BOT_USERNAME = os.getenv("BOT_USERNAME")
-DB_CHANNEL = int(os.getenv("DB_CHANNEL", -1001234567890))  # DB Channel ID
+ADMIN_ID = int(require_env("ADMIN_ID"))
+BOT_USERNAME = require_env("BOT_USERNAME")
+DB_CHANNEL = int(require_env("DB_CHANNEL"))  # e.g. -100xxxxxxxxxx
 
-api = FastAPI()
+# ---------------- FastAPI with lifespan ----------------
+pyro_heartbeat_task = None
 
-# ---------------- Pyrogram Client ----------------
 bot = Client(
     "adbot",
     api_id=API_ID,
@@ -30,35 +37,43 @@ bot = Client(
 bot.db_channel = DB_CHANNEL
 ADMINS = [ADMIN_ID]
 
-# ---------------- MongoDB ----------------
 mongo = AsyncIOMotorClient(MONGO_URI)
 db = mongo[DB_NAME]
 tokens_col = db.tokens
 
-# ---------------- HMAC SIGN ----------------
 def sign(data):
     return hmac.new(HMAC_SECRET, data.encode(), hashlib.sha256).hexdigest()
 
-# ---------------- ADRINOLINKS SHORTENER ----------------
 def short_adrinolinks(long_url):
     try:
-        r = requests.get(
-            f"https://adrinolinks.in/api?api={ADRINO_API}&url={long_url}"
-        ).json()
+        r = requests.get(f"https://adrinolinks.in/api?api={ADRINO_API}&url={long_url}", timeout=10).json()
         return r.get("shortenedUrl", long_url)
-    except:
+    except Exception:
         return long_url
 
-# ---------------- BOT START / STOP ----------------
-@api.on_event("startup")
-async def startup_event():
-    print("[LOG] Starting Bot...", flush=True)
-    asyncio.create_task(bot.start())
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global pyro_heartbeat_task
+    # Start Pyrogram
+    await bot.start()
+    # Keep a tiny heartbeat so task isn’t GC’d on some hosts
+    async def _ping():
+        while True:
+            await asyncio.sleep(3600)
+    pyro_heartbeat_task = asyncio.create_task(_ping())
+    try:
+        yield
+    finally:
+        if pyro_heartbeat_task:
+            pyro_heartbeat_task.cancel()
+            with contextlib.suppress(Exception):
+                await pyro_heartbeat_task
+        # Stop Pyrogram
+        await bot.stop()
+        # Close Mongo
+        mongo.close()
 
-@api.on_event("shutdown")
-async def shutdown_event():
-    print("[LOG] Stopping Bot...", flush=True)
-    await bot.stop()
+api = FastAPI(lifespan=lifespan)
 
 # ============================================================
 #                     START COMMAND
@@ -79,8 +94,11 @@ async def start_cmd(client, message):
         exp = existing["expires_at"].strftime("%Y-%m-%d %H:%M:%S")
         print(f"[LOG] User {uid} already has active token", flush=True)
         await message.reply_text(
-            f"✅ आपका token पहले से activate है!\n"
-            f"⏳ Valid till: {exp}\n\n"
+            f"✅ आपका token पहले से activate है!
+"
+            f"⏳ Valid till: {exp}
+
+"
             f"आपको ad दुबारा देखने की जरूरत नहीं है।"
         )
         return
@@ -106,17 +124,22 @@ async def start_cmd(client, message):
     try:
         await bot.send_message(
             ADMIN_ID,
-            f"🆕 New token generated for user {uid}\nPayload: {payload}"
+            f"🆕 New token generated for user {uid}
+Payload: {payload}"
         )
     except Exception as e:
         print(f"[LOG] Admin notification failed: {e}", flush=True)
 
     encoded = base64.urlsafe_b64encode(f"{payload}:{sig}".encode()).decode()
-    url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/watch?data={encoded}"
+    host = os.getenv("RENDER_EXTERNAL_HOSTNAME", "")
+    base_host = f"https://{host}" if host else ""
+    url = f"{base_host}/watch?data={encoded}" if base_host else f"/watch?data={encoded}"
     short_url = short_adrinolinks(url)
 
     await message.reply_text(
-        f"🔗 आपका token activate करने के लिए नीचे ad देखें:\n\n{short_url}"
+        f"🔗 आपका token activate करने के लिए नीचे ad देखें:
+
+{short_url}"
     )
 
 # ============================================================
@@ -128,7 +151,7 @@ async def watch(data: str):
     try:
         decoded = base64.urlsafe_b64decode(data.encode()).decode()
         payload, sig = decoded.rsplit(":", 1)
-    except:
+    except Exception:
         raise HTTPException(400, "Invalid data")
 
     doc = await tokens_col.find_one({"payload": payload, "sig": sig})
@@ -160,7 +183,7 @@ async def callback(data: str):
     try:
         decoded = base64.urlsafe_b64decode(data.encode()).decode()
         payload, sig = decoded.rsplit(":", 1)
-    except:
+    except Exception:
         raise HTTPException(400, "Invalid data")
 
     doc = await tokens_col.find_one({"payload": payload, "sig": sig})
@@ -183,14 +206,16 @@ async def callback(data: str):
     try:
         await bot.send_message(
             ADMIN_ID,
-            f"🔔 Token activated by {uid}\nValid till: {new_expiry}"
+            f"🔔 Token activated by {uid}
+Valid till: {new_expiry}"
         )
-    except:
+    except Exception:
         pass
 
     await bot.send_message(
         int(uid),
-        f"✅ आपका token verify हो गया!\n⏳ Valid for: 12 Hour"
+        f"✅ आपका token verify हो गया!
+⏳ Valid for: 12 Hour"
     )
 
     deep_link = f"tg://resolve?domain={BOT_USERNAME}&start=done"
@@ -204,7 +229,7 @@ async def callback(data: str):
     """)
 
 # ============================================================
-#                     ADMIN ONLY FILE/PHOTO/VIDEO LINK GENERATOR
+#             ADMIN ONLY FILE/PHOTO/VIDEO LINK GENERATOR
 # ============================================================
 @bot.on_message(
     filters.private &
@@ -242,7 +267,9 @@ async def file_link_generator(client: Client, message: Message):
     )
 
     await reply_text.edit(
-        f"<b>Here is your link</b>:\n\n{link}",
+        f"<b>Here is your link</b>:
+
+{link}",
         reply_markup=reply_markup,
         disable_web_page_preview=True
     )
