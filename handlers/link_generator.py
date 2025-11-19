@@ -1,7 +1,7 @@
 
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from bot import Bot
+from bot import bot
 from config import ADMINS, DISABLE_CHANNEL_BUTTON
 from helper_func import encode
 import asyncio
