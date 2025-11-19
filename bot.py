@@ -31,8 +31,8 @@ class Bot(Client):
                     link = (await self.get_chat(FORCE_SUB_CHANNEL)).invite_link
                 self.invitelink = link
             except Exception as a:
-                self.LOGGER(__name__).warning(a)
-                self.LOGGER(__name__).warning("Bot Can't Export Invite link from Force Sub Channel!")
+                self.LOGGER.warning(a)
+                self.LOGGER.warning("Bot Can't Export Invite link from Force Sub Channel!")
                 self.invitelink = None
         
         try:
@@ -41,14 +41,14 @@ class Bot(Client):
             test = await self.send_message(chat_id=db_channel.id, text="Test Message")
             await test.delete()
         except Exception as e:
-            self.LOGGER(__name__).warning(e)
-            self.LOGGER(__name__).warning(f"Make Sure bot is Admin in DB Channel. Current CHANNEL_ID: {CHANNEL_ID}")
+            self.LOGGER.warning(e)
+            self.LOGGER.warning(f"Make Sure bot is Admin in DB Channel. Current CHANNEL_ID: {CHANNEL_ID}")
             exit()
         
         self.set_parse_mode(ParseMode.HTML)
-        self.LOGGER(__name__).info("Bot Running! Created by @JishuDeveloper")
+        self.LOGGER.info("Bot Running! Created by @JishuDeveloper")
         self.username = usr_bot_me.username
 
     async def stop(self, *args):
         await super().stop()
-        self.LOGGER(__name__).info("Bot stopped.")
+        self.LOGGER.info("Bot stopped.")
