@@ -11,7 +11,7 @@ async def stats(bot: Bot, message: Message):
     delta = now - bot.uptime
     uptime_str = get_readable_time(delta.seconds)
 
-    # Multi-line message using triple quotes
+    # Triple quotes ka use karke multi-line string
     stats_text = f"""📊 Bot Stats
 
 ⏱ Uptime: {uptime_str}"""
