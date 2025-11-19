@@ -5,17 +5,14 @@ from typing import Optional
 mongo = AsyncIOMotorClient(os.getenv("DB_URL"))
 db = mongo[os.getenv("DB_NAME", "filesharebott")]
 
-# Collections
 tokens = db.tokens
 passes = db.passes
 users = db.users
 
-# ========== TTL INDEXES ==========
 async def ensure_ttl():
     await tokens.create_index("expiresAt", expireAfterSeconds=0)
     await passes.create_index("validUntil", expireAfterSeconds=0)
 
-# ========== TOKEN SYSTEM ==========
 async def has_pass(uid: int) -> bool:
     now = dt.datetime.utcnow()
     doc = await passes.find_one({"user_id": uid, "validUntil": {"$gt": now}})
@@ -55,7 +52,6 @@ async def use_token(tok: str, uid: int) -> Optional[int]:
     await tokens.update_one({"_id": doc["_id"]}, {"$set": {"used": True}})
     return doc["pass_hours"]
 
-# ========== USER TRACKING ==========
 async def present_user(user_id: int) -> bool:
     found = await users.find_one({'_id': user_id})
     return bool(found)
