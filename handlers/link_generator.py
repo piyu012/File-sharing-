@@ -1,15 +1,22 @@
-
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from bot import bot
-from config import ADMIN_ID
-from helper_func import encode
+from bot import bot  # 'bot' instance
+from config import ADMIN_ID  # single admin or list of admins
+import base64
 import asyncio
 
+# ---------------- Helper function ----------------
+async def encode(data: str) -> str:
+    return base64.urlsafe_b64encode(data.encode()).decode()
+
+# If ADMIN_ID is single integer, wrap in list
+ADMINS = [ADMIN_ID] if isinstance(ADMIN_ID, int) else ADMIN_ID
+DISABLE_CHANNEL_BUTTON = False  # set True if you don't want buttons in DB channel
+
 # ---------------- ADMIN ONLY FILE/PHOTO/VIDEO LINK GENERATOR ----------------
-@Bot.on_message(
-    filters.private 
-    & filters.user(ADMINS) 
+@bot.on_message(
+    filters.private
+    & filters.user(ADMINS)
     & (filters.document | filters.photo | filters.video)
 )
 async def file_link_generator(client: Client, message: Message):
@@ -22,7 +29,7 @@ async def file_link_generator(client: Client, message: Message):
     try:
         # Forward the media to DB channel
         post_message = await message.copy(
-            chat_id=client.db_channel.id, 
+            chat_id=client.db_channel.id,
             disable_notification=True
         )
     except asyncio.exceptions.TimeoutError:
@@ -44,7 +51,7 @@ async def file_link_generator(client: Client, message: Message):
     )
 
     # Send link to admin
-    await reply_text.edit(
+    await reply_text.edit_text(
         f"<b>Here is your link</b>:\n\n{link}",
         reply_markup=reply_markup,
         disable_web_page_preview=True
@@ -56,4 +63,3 @@ async def file_link_generator(client: Client, message: Message):
             await post_message.edit_reply_markup(reply_markup)
         except Exception as e:
             print("Edit Reply Markup Failed:", e)
-            pass
