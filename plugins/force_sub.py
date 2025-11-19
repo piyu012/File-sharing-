@@ -12,16 +12,12 @@ async def force_sub_handler(client: Bot, message: Message):
         except:
             invite_link = "https://t.me/your_channel"
         
-        await message.reply_text(
-            text=FORCE_MSG.format(
-                first=message.from_user.first_name,
-                last=message.from_user.last_name,
-                username=None if not message.from_user.username else '@' + message.from_user.username,
-                mention=message.from_user.mention,
-                id=message.from_user.id
-            ),
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔔 Join Channel", url=invite_link)]]
-            ),
-            quote=True
+        text = FORCE_MSG.format(
+            first=message.from_user.first_name,
+            last=message.from_user.last_name if message.from_user.last_name else "",
+            username="@" + message.from_user.username if message.from_user.username else "None",
+            mention=message.from_user.mention,
+            id=message.from_user.id
         )
+        
+        await message.reply_text(text=text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Join Channel", url=invite_link)]]), quote=True)
