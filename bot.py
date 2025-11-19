@@ -1,10 +1,10 @@
 import time, base64
 from datetime import datetime, timedelta
 from pyrogram import Client, filters
-from addons.config import API_ID, API_HASH, BOT_TOKEN, BOT_USERNAME, ADMIN_ID, HOST
-from addons.utils.auth import sign
-from addons.utils.shortener import short_adrinolinks
-from addons.database.mongo import tokens_col
+from config import API_ID, API_HASH, BOT_TOKEN, BOT_USERNAME, ADMIN_ID, HOST
+from utils.auth import sign
+from utils.shortener import short_adrinolinks
+from database.mongo import tokens_col
 
 bot = Client(
     "adbot",
