@@ -92,16 +92,8 @@ async def start_cmd(client, message):
     if existing:
         exp = existing["expires_at"].strftime("%Y-%m-%d %H:%M:%S")
         print(f"[LOG] User {uid} already has active token", flush=True)
-        await message.reply_text(
-            (
-                f"✅ आपका token पहले से activate है!
-"
-                f"⏳ Valid till: {exp}
-
-"
-                f"आपको ad दुबारा देखने की जरूरत नहीं है।"
-            )
-        )
+        # Single-line safe message (no multiline breaks)
+        await message.reply_text(f"✅ आपका token पहले से activate है! Valid till: {exp}")
         return
 
     # --------- Create NEW token ---------
@@ -123,11 +115,8 @@ async def start_cmd(client, message):
     print(f"[LOG] New token created for {uid}", flush=True)
 
     try:
-        await bot.send_message(
-            ADMIN_ID,
-            f"🆕 New token generated for user {uid}
-Payload: {payload}"
-        )
+        # Single-line admin notify
+        await bot.send_message(ADMIN_ID, f"🆕 New token generated for user {uid} | Payload: {payload}")
     except Exception as e:
         print(f"[LOG] Admin notification failed: {e}", flush=True)
 
@@ -137,11 +126,8 @@ Payload: {payload}"
     url = f"{base_host}/watch?data={encoded}" if base_host else f"/watch?data={encoded}"
     short_url = short_adrinolinks(url)
 
-    await message.reply_text(
-        f"🔗 आपका token activate करने के लिए नीचे ad देखें:
-
-{short_url}"
-    )
+    # Single-line user prompt
+    await message.reply_text(f"🔗 अपना token activate करने के लिए ad देखें: {short_url}")
 
 # ============================================================
 #                     WATCH PAGE
@@ -205,19 +191,13 @@ async def callback(data: str):
     print(f"[LOG] Token activated for user {uid}", flush=True)
 
     try:
-        await bot.send_message(
-            ADMIN_ID,
-            f"🔔 Token activated by {uid}
-Valid till: {new_expiry}"
-        )
+        # Single-line admin notify
+        await bot.send_message(ADMIN_ID, f"🔔 Token activated by {uid} | Valid till: {new_expiry}")
     except Exception:
         pass
 
-    await bot.send_message(
-        int(uid),
-        "✅ आपका token verify हो गया!
-⏳ Valid for: 12 Hour"
-    )
+    # Single-line user notify
+    await bot.send_message(int(uid), "✅ आपका token verify हो गया! ⏳ Valid for: 12 Hour")
 
     deep_link = f"tg://resolve?domain={BOT_USERNAME}&start=done"
     return HTMLResponse(f"""
@@ -267,10 +247,9 @@ async def file_link_generator(client: Client, message: Message):
         [[InlineKeyboardButton("🔁 Share Link", url=f'https://telegram.me/share/url?url={link}')]]
     )
 
+    # Single-line edit
     await reply_text.edit(
-        f"<b>Here is your link</b>:
-
-{link}",
+        f"<b>Here is your link</b>: {link}",
         reply_markup=reply_markup,
         disable_web_page_preview=True
     )
