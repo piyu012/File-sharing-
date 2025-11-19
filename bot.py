@@ -75,7 +75,7 @@ async def lifespan(app: FastAPI):
 
 api = FastAPI(lifespan=lifespan)
 
-# ---------------- Root endpoint for health check ----------------
+# ---------------- Root endpoint ----------------
 @api.get("/")
 async def root():
     return {"status": "Bot is running", "message": "File sharing bot active"}
@@ -94,7 +94,7 @@ async def start_cmd(client, message):
     if existing:
         exp = existing["expires_at"].strftime("%Y-%m-%d %H:%M:%S")
         print(f"[LOG] User {uid} has active token", flush=True)
-        await message.reply_text(f"✅ Token already active! Valid till: {exp}")
+        await message.reply_text(f"Token already active! Valid till: {exp}")
         return
 
     ts = int(time.time())
@@ -110,7 +110,7 @@ async def start_cmd(client, message):
     print(f"[LOG] New token created for {uid}", flush=True)
 
     try:
-        await bot.send_message(ADMIN_ID, f"🆕 Token generated for {uid} | Payload: {payload}")
+        await bot.send_message(ADMIN_ID, f"Token generated for user {uid}")
     except Exception as e:
         print(f"[LOG] Admin notify failed: {e}", flush=True)
 
@@ -120,7 +120,7 @@ async def start_cmd(client, message):
     url = f"{base_url}/watch?data={encoded}"
     short_url = short_adrinolinks(url)
 
-    await message.reply_text(f"🔗 Activate token: {short_url}")
+    await message.reply_text(f"Activate your token: {short_url}")
 
 # ============================================================
 #                     WATCH & CALLBACK
@@ -170,43 +170,42 @@ async def callback(data: str):
     print(f"[LOG] Token activated for {uid}", flush=True)
 
     try:
-        await bot.send_message(ADMIN_ID, f"🔔 Token activated by {uid} | Valid: {new_expiry}")
+        await bot.send_message(ADMIN_ID, f"Token activated by user {uid}")
     except Exception:
         pass
 
-    await bot.send_message(int(uid), "✅ Token verified! Valid for 12 hours.")
+    await bot.send_message(int(uid), "Token verified! Valid for 12 hours.")
 
     deep_link = f"tg://resolve?domain={BOT_USERNAME}&start=done"
-    return HTMLResponse(f'<html><head><meta http-equiv="refresh" content="0; url={deep_link}"/></head><body>Redirecting to Telegram...</body></html>')
+    return HTMLResponse(f'<html><head><meta http-equiv="refresh" content="0; url={deep_link}"/></head><body>Redirecting...</body></html>')
 
 # ============================================================
-#             FILE LINK GENERATOR (FIXED)
+#             FILE LINK GENERATOR
 # ============================================================
 @bot.on_message(filters.private & (filters.document | filters.photo | filters.video | filters.audio))
 async def file_link_generator(client: Client, message: Message):
     uid = message.from_user.id
-    print(f"[LOG] Media received from {uid}", flush=True)
+    print(f"[LOG] Media received from user {uid}", flush=True)
     
-    # Check if user is admin
     if uid not in ADMINS:
         print(f"[LOG] User {uid} is NOT admin. Ignoring.", flush=True)
-        await message.reply_text("⚠️ Only admin can generate links.")
+        await message.reply_text("Only admin can generate links.")
         return
     
     print(f"[LOG] Admin confirmed. Processing file...", flush=True)
-    reply_text = await message.reply_text("⏳ Generating link...", quote=True)
+    reply_text = await message.reply_text("Generating link...", quote=True)
 
     if not bot.db_channel:
-        await reply_text.edit_text("⚠️ DB Channel not configured!")
+        await reply_text.edit_text("DB Channel not configured!")
         print("[ERROR] DB_CHANNEL not set", flush=True)
         return
 
     try:
         post_message = await message.copy(chat_id=bot.db_channel, disable_notification=True)
-        print(f"[LOG] File copied to DB channel. Message ID: {post_message.id}", flush=True)
+        print(f"[LOG] File copied to channel. Message ID: {post_message.id}", flush=True)
     except Exception as e:
-        await reply_text.edit_text(f"❌ Copy failed: {e}")
-        print(f"[ERROR] Copy to channel failed: {e}", flush=True)
+        await reply_text.edit_text(f"Copy failed: {e}")
+        print(f"[ERROR] Copy failed: {e}", flush=True)
         return
 
     converted_id = post_message.id * abs(bot.db_channel)
@@ -214,16 +213,14 @@ async def file_link_generator(client: Client, message: Message):
     base64_string = base64.urlsafe_b64encode(string.encode()).decode()
     link = f"https://t.me/{BOT_USERNAME}?start={base64_string}"
 
-    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 Share", url=f"https://telegram.me/share/url?url={link}")]])
+    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("Share Link", url=f"https://telegram.me/share/url?url={link}")]])
 
-    await reply_text.edit(f"<b>✅ Link generated:</b>
-
-{link}", reply_markup=reply_markup, disable_web_page_preview=True)
+    await reply_text.edit(f"Link generated: {link}", reply_markup=reply_markup, disable_web_page_preview=True)
 
     try:
         await post_message.edit_reply_markup(reply_markup)
-        print("[LOG] Channel post updated with markup", flush=True)
+        print("[LOG] Channel post updated", flush=True)
     except Exception as e:
         print(f"[LOG] Markup edit failed: {e}", flush=True)
 
-print("[INIT] Bot configuration loaded. Waiting for FastAPI startup...", flush=True)
+print("[INIT] Bot configuration loaded. Ready for startup.", flush=True)
