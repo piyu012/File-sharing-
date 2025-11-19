@@ -17,12 +17,22 @@ async def delete_file_later(client, message, seconds):
     except:
         pass
 
-@Bot.on_message(filters.command('start') & filters.private & is_subscribed)
+@Bot.on_message(filters.command('start') & filters.private)
 async def start_command(client: Bot, message: Message):
+    # Subscription चेक हैंडलर में करें
+    subscribed = await is_subscribed(None, client, message)  # इस तरह call करें
+    
+    if not subscribed:
+        # Force sub वाला मेसेज भेजें या जो भी logic हो
+        await message.reply_text("आपको बोट उपयोग के लिए चैनल जॉइन करना होगा।")
+        return
+
     uid = message.from_user.id
     
     if not await present_user(uid):
         await add_user(uid)
+    
+    # बाकी आपका जो code है...
     
     if len(message.text) > 7:
         try:
@@ -77,7 +87,7 @@ Or use: /redeem TOKEN"""
             return
         except:
             pass
-    
+
     reply_markup = InlineKeyboardMarkup([
         [InlineKeyboardButton("About", callback_data="about")],
         [InlineKeyboardButton("Close", callback_data="close")]
