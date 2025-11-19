@@ -9,11 +9,5 @@ from helper_func import get_readable_time
 async def stats(bot: Bot, message: Message):
     now = datetime.now()
     delta = now - bot.uptime
-    uptime_str = get_readable_time(delta.seconds)
-
-    # Triple quotes ka use karke multi-line string
-    stats_text = f"""📊 Bot Stats
-
-⏱ Uptime: {uptime_str}"""
-
-    await message.reply(stats_text)
+    time_str = get_readable_time(delta.seconds)
+    await message.reply(f"Uptime: {time_str}")
