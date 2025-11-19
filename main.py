@@ -1,8 +1,8 @@
 import asyncio
 from fastapi import FastAPI
-from addons.bot import bot
-from addons.routes.watch import router as watch_router
-from addons.routes.callback import router as callback_router
+from bot import bot
+from routes.watch import router as watch_router
+from routes.callback import router as callback_router
 
 api = FastAPI()
 
