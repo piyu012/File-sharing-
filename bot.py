@@ -23,7 +23,6 @@ class Bot(Client):
         usr_bot_me = await self.get_me()
         self.uptime = datetime.now()
         
-        # Force subscription check
         if FORCE_SUB_CHANNEL:
             try:
                 link = (await self.get_chat(FORCE_SUB_CHANNEL)).invite_link
@@ -36,7 +35,6 @@ class Bot(Client):
                 self.LOGGER(__name__).warning("Bot Can't Export Invite link from Force Sub Channel!")
                 self.invitelink = None
         
-        # DB Channel setup
         try:
             db_channel = await self.get_chat(CHANNEL_ID)
             self.db_channel = db_channel
@@ -44,13 +42,11 @@ class Bot(Client):
             await test.delete()
         except Exception as e:
             self.LOGGER(__name__).warning(e)
-            self.LOGGER(__name__).warning(f"Make Sure bot is Admin in DB Channel, and Double check the CHANNEL_ID Value, Current Value {CHANNEL_ID}")
+            self.LOGGER(__name__).warning(f"Make Sure bot is Admin in DB Channel. Current CHANNEL_ID: {CHANNEL_ID}")
             exit()
         
         self.set_parse_mode(ParseMode.HTML)
-        self.LOGGER(__name__).info(f"Bot Running..!
-
-Created by @JishuDeveloper")
+        self.LOGGER(__name__).info("Bot Running! Created by @JishuDeveloper")
         self.username = usr_bot_me.username
 
     async def stop(self, *args):
