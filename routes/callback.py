@@ -1,10 +1,10 @@
 import base64
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
-from addons.database.mongo import tokens_col
+from database.mongo import tokens_col
 from datetime import datetime, timedelta
-from addons.config import ADMIN_ID, BOT_USERNAME
-from addons.bot import bot
+from config import ADMIN_ID, BOT_USERNAME
+from bot import bot
 
 router = APIRouter()
 
