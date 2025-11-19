@@ -27,7 +27,6 @@ bot = Client(
     api_hash=API_HASH,
     bot_token=BOT_TOKEN
 )
-
 bot.db_channel = DB_CHANNEL
 ADMINS = [ADMIN_ID]
 
@@ -53,10 +52,12 @@ def short_adrinolinks(long_url):
 # ---------------- BOT START / STOP ----------------
 @api.on_event("startup")
 async def startup_event():
+    print("[LOG] Starting Bot...")
     asyncio.create_task(bot.start())
 
 @api.on_event("shutdown")
 async def shutdown_event():
+    print("[LOG] Stopping Bot...")
     await bot.stop()
 
 # ============================================================
@@ -64,10 +65,10 @@ async def shutdown_event():
 # ============================================================
 @bot.on_message(filters.command("start"))
 async def start_cmd(client, message):
+    print(f"[LOG] /start command received from {message.from_user.id}")
     uid = message.from_user.id
     now = datetime.utcnow()
 
-    # --------- Check existing activated & valid token ---------
     existing = await tokens_col.find_one({
         "uid": uid,
         "used": True,
@@ -76,6 +77,7 @@ async def start_cmd(client, message):
 
     if existing:
         exp = existing["expires_at"].strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[LOG] User {uid} already has active token")
         await message.reply_text(
             f"✅ आपका token पहले से activate है!\n"
             f"⏳ Valid till: {exp}\n\n"
@@ -99,14 +101,15 @@ async def start_cmd(client, message):
         "expires_at": expire_time
     })
 
-    # Notify admin
+    print(f"[LOG] New token created for {uid}")
+
     try:
         await bot.send_message(
             ADMIN_ID,
             f"🆕 New token generated for user {uid}\nPayload: {payload}"
         )
-    except:
-        pass
+    except Exception as e:
+        print(f"[LOG] Admin notification failed: {e}")
 
     encoded = base64.urlsafe_b64encode(f"{payload}:{sig}".encode()).decode()
     url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/watch?data={encoded}"
@@ -117,10 +120,11 @@ async def start_cmd(client, message):
     )
 
 # ============================================================
-#                     WATCH PAGE (NO WAIT)
+#                     WATCH PAGE
 # ============================================================
 @api.get("/watch", response_class=HTMLResponse)
 async def watch(data: str):
+    print(f"[LOG] /watch called with data={data}")
     try:
         decoded = base64.urlsafe_b64decode(data.encode()).decode()
         payload, sig = decoded.rsplit(":", 1)
@@ -135,7 +139,6 @@ async def watch(data: str):
     if doc["expires_at"] < now:
         raise HTTPException(403, "Token expired")
 
-    # If user already used this token → no reuse
     if doc["used"]:
         raise HTTPException(403, "Token already used")
 
@@ -153,6 +156,7 @@ async def watch(data: str):
 # ============================================================
 @api.get("/callback")
 async def callback(data: str):
+    print(f"[LOG] /callback called with data={data}")
     try:
         decoded = base64.urlsafe_b64decode(data.encode()).decode()
         payload, sig = decoded.rsplit(":", 1)
@@ -164,10 +168,8 @@ async def callback(data: str):
         raise HTTPException(404, "Token not found")
 
     now = datetime.utcnow()
-    if doc["expires_at"] < now:
-        raise HTTPException(403, "Token expired")
-    if doc["used"]:
-        raise HTTPException(403, "Token already used")
+    if doc["expires_at"] < now or doc["used"]:
+        raise HTTPException(403, "Token expired or already used")
 
     uid, ts = payload.split(":")
     new_expiry = now + timedelta(hours=12)
@@ -176,7 +178,8 @@ async def callback(data: str):
         {"$set": {"used": True, "activated_at": now, "expires_at": new_expiry}}
     )
 
-    # Notify admin
+    print(f"[LOG] Token activated for user {uid}")
+
     try:
         await bot.send_message(
             ADMIN_ID,
@@ -185,7 +188,6 @@ async def callback(data: str):
     except:
         pass
 
-    # User message
     await bot.send_message(
         int(uid),
         f"✅ आपका token verify हो गया!\n⏳ Valid for: 12 Hour"
@@ -205,53 +207,47 @@ async def callback(data: str):
 #                     ADMIN ONLY FILE/PHOTO/VIDEO LINK GENERATOR
 # ============================================================
 @bot.on_message(
-    filters.private
-    & filters.user(ADMINS)
-    & (filters.document | filters.photo | filters.video)
+    filters.private & 
+    (filters.document | filters.photo | filters.video) & 
+    filters.user(lambda uid: uid in ADMINS)
 )
 async def file_link_generator(client: Client, message: Message):
     print(f"[LOG] File handler triggered by {message.from_user.id}")
 
     reply_text = await message.reply_text("⏳ Please wait, generating link...", quote=True)
 
-    if not getattr(client, "db_channel", None):
+    if not getattr(bot, "db_channel", None):
         await reply_text.edit_text("⚠️ Database Channel not set!")
         return
 
     try:
-        # Forward the media to DB channel
         post_message = await message.copy(
-            chat_id=client.db_channel,
+            chat_id=bot.db_channel,
             disable_notification=True
         )
-    except asyncio.exceptions.TimeoutError:
-        await reply_text.edit_text("⚠️ Timeout occurred while forwarding!")
-        return
+        print(f"[LOG] Media copied to DB channel: {bot.db_channel}, message_id: {post_message.id}")
     except Exception as e:
         await reply_text.edit_text(f"❌ Something went wrong: {e}")
+        print(f"[LOG] Copy failed: {e}")
         return
 
-    # Generate unique deep link
-    converted_id = post_message.id * abs(client.db_channel)
+    converted_id = post_message.id * abs(bot.db_channel)
     string = f"get-{converted_id}"
     base64_string = base64.urlsafe_b64encode(string.encode()).decode()
     link = f"https://t.me/{BOT_USERNAME}?start={base64_string}"
 
-    # Create share button
     reply_markup = InlineKeyboardMarkup(
         [[InlineKeyboardButton("🔁 Share Link", url=f'https://telegram.me/share/url?url={link}')]]
     )
 
-    # Send link to admin
     await reply_text.edit(
         f"<b>Here is your link</b>:\n\n{link}",
         reply_markup=reply_markup,
         disable_web_page_preview=True
     )
 
-    # Optionally edit DB channel post with same button
     try:
         await post_message.edit_reply_markup(reply_markup)
+        print("[LOG] DB channel post markup updated")
     except Exception as e:
         print("[LOG] Edit Reply Markup Failed:", e)
-        pass
