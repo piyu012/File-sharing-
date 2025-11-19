@@ -1,10 +1,9 @@
 from pyrogram import Client
 from pyrogram.enums import ParseMode
-import sys
 from datetime import datetime
-from config import API_HASH, API_ID, LOGGER, BOT_TOKEN, TG_BOT_WORKERS, FORCE_SUB_CHANNEL, CHANNEL_ID
-
+from config import API_HASH, API_ID, BOT_TOKEN, TG_BOT_WORKERS, FORCE_SUB_CHANNEL, CHANNEL_ID, LOGGER
 import pyrogram.utils
+
 pyrogram.utils.MIN_CHANNEL_ID = -1009999999999
 
 class Bot(Client):
@@ -23,7 +22,7 @@ class Bot(Client):
         await super().start()
         usr_bot_me = await self.get_me()
         self.uptime = datetime.now()
-
+        
         # Force subscription check
         if FORCE_SUB_CHANNEL:
             try:
@@ -34,24 +33,26 @@ class Bot(Client):
                 self.invitelink = link
             except Exception as a:
                 self.LOGGER(__name__).warning(a)
-                self.LOGGER(__name__).warning("Bot Can't Export Invite link From Force Sub Channel!")
-                sys.exit()
-
-        # DB channel check
+                self.LOGGER(__name__).warning("Bot Can't Export Invite link from Force Sub Channel!")
+                self.invitelink = None
+        
+        # DB Channel setup
         try:
             db_channel = await self.get_chat(CHANNEL_ID)
             self.db_channel = db_channel
-            test = await self.send_message(chat_id=db_channel.id, text="Hey 🖐")
+            test = await self.send_message(chat_id=db_channel.id, text="Test Message")
             await test.delete()
         except Exception as e:
             self.LOGGER(__name__).warning(e)
-            self.LOGGER(__name__).warning(f"Make Sure Bot Is Admin In DB Channel, Current CHANNEL_ID: {CHANNEL_ID}")
-            sys.exit()
-
+            self.LOGGER(__name__).warning(f"Make Sure bot is Admin in DB Channel, and Double check the CHANNEL_ID Value, Current Value {CHANNEL_ID}")
+            exit()
+        
         self.set_parse_mode(ParseMode.HTML)
-        self.LOGGER(__name__).info(f"Bot Running...!\nCreated By https://t.me/Madflix_Bots")
+        self.LOGGER(__name__).info(f"Bot Running..!
+
+Created by @JishuDeveloper")
         self.username = usr_bot_me.username
 
     async def stop(self, *args):
         await super().stop()
-        self.LOGGER(__name__).info("Bot Stopped...")
+        self.LOGGER(__name__).info("Bot stopped.")
