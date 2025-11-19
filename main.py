@@ -7,7 +7,6 @@ bot = Bot()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown bot with FastAPI"""
     print("[STARTUP] Starting Pyrogram bot...")
     await bot.start()
     print("[STARTUP] Bot started successfully!")
@@ -20,12 +19,10 @@ async def lifespan(app: FastAPI):
 
 api = FastAPI(lifespan=lifespan)
 
-# Root endpoint
 @api.get("/")
 async def root():
     return {"status": "Bot is running", "bot": "File Sharing + Token System"}
 
-# Health check
 @api.get("/health")
 async def health():
-    return {"status": "ok", "bot_running": bot.is_connected}
+    return {"status": "ok"}
