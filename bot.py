@@ -74,11 +74,6 @@ async def root():
 async def start_cmd(client, message):
     uid = message.from_user.id
     text = message.text or ""
-    
-    # Remove this block to allow admin links to use token normally
-    # if text.startswith("/start admin-"):
-    #     await message.reply_text("Admin link detected. Token check skipped.")
-    #     return
 
     print(f"[LOG] /start from user {uid}", flush=True)
     now = datetime.utcnow()
@@ -95,8 +90,13 @@ async def start_cmd(client, message):
     expire_time = now + timedelta(hours=12)
 
     await tokens_col.insert_one({
-        "uid": uid, "payload": payload, "sig": sig,
-        "created_at": now, "used": False, "activated_at": None, "expires_at": expire_time
+        "uid": uid,
+        "payload": payload,
+        "sig": sig,
+        "created_at": now,
+        "used": False,
+        "activated_at": None,
+        "expires_at": expire_time
     })
 
     print(f"[LOG] New token created for {uid}", flush=True)
@@ -178,12 +178,12 @@ async def callback(data: str):
 async def file_link_generator(client: Client, message: Message):
     uid = message.from_user.id
     print(f"[LOG] Media received from user {uid}", flush=True)
-    
+
     if uid not in ADMINS:
         await message.reply_text("Only admin can generate links.")
         print(f"[LOG] User {uid} is not admin", flush=True)
         return
-    
+
     reply_text = await message.reply_text("Generating link...", quote=True)
 
     if not bot.db_channel:
@@ -202,7 +202,7 @@ async def file_link_generator(client: Client, message: Message):
     converted_id = post_message.id * abs(bot.db_channel)
     string = f"get-{converted_id}"
     base64_string = base64.urlsafe_b64encode(string.encode()).decode()
-    # ✅ Admin-specific link with 'admin-' prefix
+    # Admin link (optional, keeps admin- prefix)
     link = f"https://t.me/{BOT_USERNAME}?start=admin-{base64_string}"
 
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("Share Link", url=f"https://telegram.me/share/url?url={link}")]])
