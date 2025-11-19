@@ -46,7 +46,10 @@ def sign(data):
 
 def short_adrinolinks(long_url):
     try:
-        r = requests.get(f"https://adrinolinks.in/api?api={ADRINO_API}&url={long_url}", timeout=10).json()
+        r = requests.get(
+            f"https://adrinolinks.in/api?api={ADRINO_API}&url={long_url}",
+            timeout=10
+        ).json()
         return r.get("shortenedUrl", long_url)
     except Exception:
         return long_url
@@ -54,9 +57,7 @@ def short_adrinolinks(long_url):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global pyro_heartbeat_task
-    # Start Pyrogram
     await bot.start()
-    # Keep a tiny heartbeat so task isn’t GC’d on some hosts
     async def _ping():
         while True:
             await asyncio.sleep(3600)
@@ -68,9 +69,7 @@ async def lifespan(app: FastAPI):
             pyro_heartbeat_task.cancel()
             with contextlib.suppress(Exception):
                 await pyro_heartbeat_task
-        # Stop Pyrogram
         await bot.stop()
-        # Close Mongo
         mongo.close()
 
 api = FastAPI(lifespan=lifespan)
@@ -94,12 +93,14 @@ async def start_cmd(client, message):
         exp = existing["expires_at"].strftime("%Y-%m-%d %H:%M:%S")
         print(f"[LOG] User {uid} already has active token", flush=True)
         await message.reply_text(
-            f"✅ आपका token पहले से activate है!
+            (
+                f"✅ आपका token पहले से activate है!
 "
-            f"⏳ Valid till: {exp}
+                f"⏳ Valid till: {exp}
 
 "
-            f"आपको ad दुबारा देखने की जरूरत नहीं है।"
+                f"आपको ad दुबारा देखने की जरूरत नहीं है।"
+            )
         )
         return
 
@@ -214,7 +215,7 @@ Valid till: {new_expiry}"
 
     await bot.send_message(
         int(uid),
-        f"✅ आपका token verify हो गया!
+        "✅ आपका token verify हो गया!
 ⏳ Valid for: 12 Hour"
     )
 
