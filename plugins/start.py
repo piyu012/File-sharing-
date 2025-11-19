@@ -43,11 +43,8 @@ async def start_command(client: Bot, message: Message):
                 watch_url = f"{BASE_URL}/watch?payload={payload}&sig={sig}"
                 short_link = short_url(watch_url)
                 
-                text = (
-                    f"Access Locked! Watch ad: {short_link}
-"
-                    f"Or use: /redeem TOKEN"
-                )
+                text = f"""Access Locked! Watch ad: {short_link}
+Or use: /redeem TOKEN"""
                 
                 await message.reply_text(
                     text,
