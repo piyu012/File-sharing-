@@ -1,21 +1,31 @@
 import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from bot import Bot
 
-api = FastAPI()
 bot = Bot()
 
-@api.on_event("startup")
-async def startup():
-    # Start old bot in background
-    asyncio.create_task(bot.start())
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown bot with FastAPI"""
+    print("[STARTUP] Starting Pyrogram bot...")
+    await bot.start()
+    print("[STARTUP] Bot started successfully!")
+    try:
+        yield
+    finally:
+        print("[SHUTDOWN] Stopping bot...")
+        await bot.stop()
+        print("[SHUTDOWN] Bot stopped.")
 
-@api.on_event("shutdown")
-async def shutdown():
-    # Graceful stop
-    await bot.stop()
+api = FastAPI(lifespan=lifespan)
 
-# Optional: friendly homepage
+# Root endpoint
 @api.get("/")
-async def home():
-    return {"message": "Old bot running in background!"}
+async def root():
+    return {"status": "Bot is running", "bot": "File Sharing + Token System"}
+
+# Health check
+@api.get("/health")
+async def health():
+    return {"status": "ok", "bot_running": bot.is_connected}
