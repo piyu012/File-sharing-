@@ -1,7 +1,7 @@
 from pyrogram import Client, filters
 from datetime import datetime
-from addons.utils import encode_payload
-from addons.db import files_col
+from utils import encode_payload
+from db import files_col
 import os
 
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
