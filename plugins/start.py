@@ -2,9 +2,9 @@ import os, time, hmac, hashlib, asyncio
 from pyrogram import filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from bot import Bot
-from config import ADMINS, FORCE_MSG, START_MSG, FILE_AUTO_DELETE, HMAC_SECRET, BASE_URL, BOT_USERNAME
+from config import ADMINS, START_MSG, FILE_AUTO_DELETE, HMAC_SECRET, BASE_URL
 from helper_func import encode, decode, get_messages, is_subscribed, short_url
-from db_init import has_pass, grant_pass, mint_token, use_token, present_user, add_user, full_userbase, del_user
+from db_init import has_pass, grant_pass, use_token, present_user, add_user, full_userbase, del_user
 from pyrogram.errors import FloodWait
 
 def sign(payload: str) -> str:
@@ -43,12 +43,12 @@ async def start_command(client: Bot, message: Message):
                 watch_url = f"{BASE_URL}/watch?payload={payload}&sig={sig}"
                 short_link = short_url(watch_url)
                 
-                text = f"Access Locked!
+                await message.reply_text(
+                    f"Access Locked! Watch ad: {short_link}
 
-Watch ad: {short_link}
-
-Or: /redeem TOKEN"
-                await message.reply_text(text, disable_web_page_preview=True)
+Or use: /redeem TOKEN",
+                    disable_web_page_preview=True
+                )
                 return
             
             temp_msg = await message.reply("Please wait...")
@@ -63,12 +63,14 @@ Or: /redeem TOKEN"
             
             for msg in messages:
                 try:
-                    await msg.copy(chat_id=message.from_user.id)
+                    copied = await msg.copy(chat_id=message.from_user.id)
                     if FILE_AUTO_DELETE:
-                        asyncio.create_task(delete_file_later(client, msg, FILE_AUTO_DELETE))
+                        asyncio.create_task(delete_file_later(client, copied, FILE_AUTO_DELETE))
                 except FloodWait as e:
                     await asyncio.sleep(e.x)
-                    await msg.copy(chat_id=message.from_user.id)
+                    copied = await msg.copy(chat_id=message.from_user.id)
+                    if FILE_AUTO_DELETE:
+                        asyncio.create_task(delete_file_later(client, copied, FILE_AUTO_DELETE))
                 except:
                     pass
             return
@@ -76,17 +78,15 @@ Or: /redeem TOKEN"
             pass
     
     reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("About Me", callback_data="about")],
+        [InlineKeyboardButton("About", callback_data="about")],
         [InlineKeyboardButton("Close", callback_data="close")]
     ])
     
-    text = START_MSG.format(
-        first=message.from_user.first_name,
-        last=message.from_user.last_name if message.from_user.last_name else "",
-        username="@" + message.from_user.username if message.from_user.username else "None",
-        mention=message.from_user.mention,
-        id=message.from_user.id
-    )
+    first = message.from_user.first_name
+    last = message.from_user.last_name if message.from_user.last_name else ""
+    username = "@" + message.from_user.username if message.from_user.username else "None"
+    
+    text = START_MSG.format(first=first, last=last, username=username, mention=message.from_user.mention, id=message.from_user.id)
     
     await message.reply_text(text=text, reply_markup=reply_markup, disable_web_page_preview=True, quote=True)
 
@@ -105,7 +105,7 @@ async def redeem_token(client: Bot, message: Message):
         return await message.reply_text("Invalid, expired, or already used token!")
     
     await grant_pass(uid, hours)
-    await message.reply_text(f"Token redeemed! Access granted for {hours} hours.")
+    await message.reply_text(f"Token redeemed! Access for {hours} hours.")
 
 @Bot.on_message(filters.command('users') & filters.user(ADMINS))
 async def users_command(client: Bot, message: Message):
@@ -130,32 +130,19 @@ async def broadcast(client: Bot, message: Message):
                 await message.reply_to_message.copy(user_id)
                 success += 1
             except Exception as e:
-                if "blocked" in str(e).lower():
+                err = str(e).lower()
+                if "blocked" in err:
                     blocked += 1
                     await del_user(user_id)
-                elif "deleted" in str(e).lower():
+                elif "deleted" in err:
                     deleted += 1
                     await del_user(user_id)
                 else:
                     failed += 1
             
             if (success + blocked + deleted + failed) % 20 == 0:
-                status = f"Total: {total}
-Success: {success}
-Blocked: {blocked}
-Deleted: {deleted}
-Failed: {failed}"
-                await msg.edit(f"Broadcasting...
-
-{status}")
+                await msg.edit(f"Broadcasting... Total: {total}, Success: {success}, Blocked: {blocked}, Deleted: {deleted}, Failed: {failed}")
         
-        status = f"Total: {total}
-Success: {success}
-Blocked: {blocked}
-Deleted: {deleted}
-Failed: {failed}"
-        await msg.edit(f"Broadcast Complete!
-
-{status}")
+        await msg.edit(f"Broadcast Done! Total: {total}, Success: {success}, Blocked: {blocked}, Deleted: {deleted}, Failed: {failed}")
     else:
         await message.reply("Reply to a message to broadcast.")
