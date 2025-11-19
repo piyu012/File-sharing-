@@ -16,7 +16,7 @@ MONGO_URI = os.getenv("MONGO_URI")
 DB_NAME = "filesharebott"
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 BOT_USERNAME = os.getenv("BOT_USERNAME")
-DB_CHANNEL = int(os.getenv("DB_CHANNEL", -1001234567890))  # yaha aapka DB channel ID
+DB_CHANNEL = int(os.getenv("DB_CHANNEL", -1001234567890))  # DB Channel ID
 
 api = FastAPI()
 
@@ -52,12 +52,12 @@ def short_adrinolinks(long_url):
 # ---------------- BOT START / STOP ----------------
 @api.on_event("startup")
 async def startup_event():
-    print("[LOG] Starting Bot...")
+    print("[LOG] Starting Bot...", flush=True)
     asyncio.create_task(bot.start())
 
 @api.on_event("shutdown")
 async def shutdown_event():
-    print("[LOG] Stopping Bot...")
+    print("[LOG] Stopping Bot...", flush=True)
     await bot.stop()
 
 # ============================================================
@@ -65,7 +65,7 @@ async def shutdown_event():
 # ============================================================
 @bot.on_message(filters.command("start"))
 async def start_cmd(client, message):
-    print(f"[LOG] /start command received from {message.from_user.id}")
+    print(f"[LOG] /start command received from {message.from_user.id}", flush=True)
     uid = message.from_user.id
     now = datetime.utcnow()
 
@@ -77,7 +77,7 @@ async def start_cmd(client, message):
 
     if existing:
         exp = existing["expires_at"].strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[LOG] User {uid} already has active token")
+        print(f"[LOG] User {uid} already has active token", flush=True)
         await message.reply_text(
             f"✅ आपका token पहले से activate है!\n"
             f"⏳ Valid till: {exp}\n\n"
@@ -101,7 +101,7 @@ async def start_cmd(client, message):
         "expires_at": expire_time
     })
 
-    print(f"[LOG] New token created for {uid}")
+    print(f"[LOG] New token created for {uid}", flush=True)
 
     try:
         await bot.send_message(
@@ -109,7 +109,7 @@ async def start_cmd(client, message):
             f"🆕 New token generated for user {uid}\nPayload: {payload}"
         )
     except Exception as e:
-        print(f"[LOG] Admin notification failed: {e}")
+        print(f"[LOG] Admin notification failed: {e}", flush=True)
 
     encoded = base64.urlsafe_b64encode(f"{payload}:{sig}".encode()).decode()
     url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/watch?data={encoded}"
@@ -124,7 +124,7 @@ async def start_cmd(client, message):
 # ============================================================
 @api.get("/watch", response_class=HTMLResponse)
 async def watch(data: str):
-    print(f"[LOG] /watch called with data={data}")
+    print(f"[LOG] /watch called with data={data}", flush=True)
     try:
         decoded = base64.urlsafe_b64decode(data.encode()).decode()
         payload, sig = decoded.rsplit(":", 1)
@@ -156,7 +156,7 @@ async def watch(data: str):
 # ============================================================
 @api.get("/callback")
 async def callback(data: str):
-    print(f"[LOG] /callback called with data={data}")
+    print(f"[LOG] /callback called with data={data}", flush=True)
     try:
         decoded = base64.urlsafe_b64decode(data.encode()).decode()
         payload, sig = decoded.rsplit(":", 1)
@@ -178,7 +178,7 @@ async def callback(data: str):
         {"$set": {"used": True, "activated_at": now, "expires_at": new_expiry}}
     )
 
-    print(f"[LOG] Token activated for user {uid}")
+    print(f"[LOG] Token activated for user {uid}", flush=True)
 
     try:
         await bot.send_message(
@@ -207,17 +207,18 @@ async def callback(data: str):
 #                     ADMIN ONLY FILE/PHOTO/VIDEO LINK GENERATOR
 # ============================================================
 @bot.on_message(
-    filters.private & 
-    (filters.document | filters.photo | filters.video) & 
-    filters.user(lambda uid: uid in ADMINS)
+    filters.private &
+    (filters.document | filters.photo | filters.video | filters.audio) &
+    filters.user(ADMINS)
 )
 async def file_link_generator(client: Client, message: Message):
-    print(f"[LOG] File handler triggered by {message.from_user.id}")
+    print(f"[LOG] File handler triggered by {message.from_user.id}", flush=True)
 
     reply_text = await message.reply_text("⏳ Please wait, generating link...", quote=True)
 
     if not getattr(bot, "db_channel", None):
         await reply_text.edit_text("⚠️ Database Channel not set!")
+        print("[LOG] DB channel not set", flush=True)
         return
 
     try:
@@ -225,10 +226,10 @@ async def file_link_generator(client: Client, message: Message):
             chat_id=bot.db_channel,
             disable_notification=True
         )
-        print(f"[LOG] Media copied to DB channel: {bot.db_channel}, message_id: {post_message.id}")
+        print(f"[LOG] Media copied to DB channel: {bot.db_channel}, message_id: {post_message.id}", flush=True)
     except Exception as e:
         await reply_text.edit_text(f"❌ Something went wrong: {e}")
-        print(f"[LOG] Copy failed: {e}")
+        print(f"[LOG] Copy failed: {e}", flush=True)
         return
 
     converted_id = post_message.id * abs(bot.db_channel)
@@ -248,6 +249,6 @@ async def file_link_generator(client: Client, message: Message):
 
     try:
         await post_message.edit_reply_markup(reply_markup)
-        print("[LOG] DB channel post markup updated")
+        print("[LOG] DB channel post markup updated", flush=True)
     except Exception as e:
-        print("[LOG] Edit Reply Markup Failed:", e)
+        print("[LOG] Edit Reply Markup Failed:", e, flush=True)
