@@ -44,9 +44,8 @@ async def start_command(client: Bot, message: Message):
                 short_link = short_url(watch_url)
                 
                 await message.reply_text(
-                    f"Access Locked! Watch ad: {short_link}
-
-Or use: /redeem TOKEN",
+                    f"""Access Locked! Watch ad: {short_link}
+Or use: /redeem TOKEN""",
                     disable_web_page_preview=True
                 )
                 return
