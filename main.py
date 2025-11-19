@@ -3,6 +3,8 @@ from fastapi import FastAPI
 from bot import bot
 from routes.watch import router as watch_router
 from routes.callback import router as callback_router
+# main.py me bot start hone se pehle
+from handlers import link_generator  # ya jaha bhi file rakhi hai
 
 api = FastAPI()
 
