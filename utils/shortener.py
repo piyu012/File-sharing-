@@ -1,5 +1,5 @@
 import requests
-from addons.config import ADRINO_API
+from config import ADRINO_API
 
 def short_adrinolinks(long_url):
     try:
