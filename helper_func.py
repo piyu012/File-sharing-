@@ -5,7 +5,6 @@ from config import FORCE_SUB_CHANNEL, ADMINS, ADRINO_API
 from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant
 from pyrogram.errors import FloodWait
 
-# ========== FORCE SUB CHECK ==========
 async def is_subscribed(filter, client, update):
     if not FORCE_SUB_CHANNEL:
         return True
@@ -20,7 +19,6 @@ async def is_subscribed(filter, client, update):
         return False
     return True
 
-# ========== BASE64 ENCODE/DECODE ==========
 async def encode(string):
     string_bytes = string.encode("ascii")
     base64_bytes = base64.urlsafe_b64encode(string_bytes)
@@ -34,23 +32,16 @@ async def decode(base64_string):
     string = string_bytes.decode("ascii")
     return string
 
-# ========== MESSAGE ID EXTRACTION ==========
 async def get_messages(client, message_ids):
     messages = []
     total_messages = 0
     while total_messages != len(message_ids):
         temb_ids = message_ids[total_messages:total_messages+200]
         try:
-            msgs = await client.get_messages(
-                chat_id=client.db_channel.id,
-                message_ids=temb_ids
-            )
+            msgs = await client.get_messages(chat_id=client.db_channel.id, message_ids=temb_ids)
         except FloodWait as e:
             await asyncio.sleep(e.x)
-            msgs = await client.get_messages(
-                chat_id=client.db_channel.id,
-                message_ids=temb_ids
-            )
+            msgs = await client.get_messages(chat_id=client.db_channel.id, message_ids=temb_ids)
         except:
             pass
         total_messages += len(temb_ids)
@@ -74,7 +65,6 @@ async def get_message_id(client, message):
             return msg_id
     return False
 
-# ========== TIME FORMATTING ==========
 def get_readable_time(seconds: int) -> str:
     count = 0
     ping_time = ""
@@ -95,17 +85,11 @@ def get_readable_time(seconds: int) -> str:
     ping_time += ":".join(time_list)
     return ping_time
 
-# ========== URL SHORTENER (AdrinoLinks) ==========
 def short_url(long_url: str) -> str:
-    """Shorten URL using AdrinoLinks API"""
     if not ADRINO_API:
         return long_url
     try:
-        r = requests.get(
-            "https://adrinolinks.in/api",
-            params={"api": ADRINO_API, "url": long_url},
-            timeout=10
-        )
+        r = requests.get("https://adrinolinks.in/api", params={"api": ADRINO_API, "url": long_url}, timeout=10)
         data = r.json()
         return data.get("shortenedUrl", long_url)
     except:
