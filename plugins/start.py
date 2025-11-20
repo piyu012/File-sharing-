@@ -55,7 +55,6 @@ async def start_command(client: Bot, message: Message):
         try:
             base64_string = message.text.split(" ", 1)[1]
             
-            # Skip token check for verified parameter
             if base64_string == "verified":
                 await message.reply_text("Token verified successfully! You can now access files.")
                 return
@@ -78,7 +77,6 @@ async def start_command(client: Bot, message: Message):
             else:
                 return
 
-            # Token check - single line strings only
             if not await has_valid_token(uid):
                 ts = int(time.time())
                 payload = f"{uid}:{ts}"
@@ -90,13 +88,14 @@ async def start_command(client: Bot, message: Message):
                 url = f"{BASE_URL}/watch?data={encoded}"
                 short_url = short_adrinolinks(url)
                 
-                lock_msg = f"Access Locked!
+                await message.reply_text(
+                    "Access Locked!
 
-Watch ad to unlock: {short_url}
+Watch ad to unlock: " + short_url + "
 
-Token valid for 12 hours after verification."
-                
-                await message.reply_text(lock_msg, disable_web_page_preview=True)
+Token valid for 12 hours after verification.",
+                    disable_web_page_preview=True
+                )
                 return
             
             temp_msg = await message.reply("Please wait...")
@@ -214,12 +213,12 @@ async def send_text(client: Bot, message: Message):
                 unsuccessful += 1
             
             total += 1
-            
-        status = f"Successful: {successful}
-Blocked: {blocked}
-Deleted: {deleted}
-Unsuccessful: {unsuccessful}
-Total: {total}"
+        
+        status = "Successful: " + str(successful) + "
+Blocked: " + str(blocked) + "
+Deleted: " + str(deleted) + "
+Unsuccessful: " + str(unsuccessful) + "
+Total: " + str(total)
         
         return await pls_wait.edit(status)
     else:
