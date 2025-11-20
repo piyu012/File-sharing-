@@ -7,6 +7,7 @@ bot = Bot()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Startup and shutdown bot with FastAPI"""
     print("[STARTUP] Starting Pyrogram bot...")
     await bot.start()
     print("[STARTUP] Bot started successfully!")
@@ -19,10 +20,16 @@ async def lifespan(app: FastAPI):
 
 api = FastAPI(lifespan=lifespan)
 
+# Import ad routes
+from addon.ad_routes import router as ad_router
+api.include_router(ad_router)
+
+# Root endpoint
 @api.get("/")
 async def root():
-    return {"status": "Bot is running", "bot": "File Sharing + Token System"}
+    return {"status": "Bot is running", "system": "File Sharing + Ad System"}
 
+# Health check
 @api.get("/health")
 async def health():
     return {"status": "ok"}
