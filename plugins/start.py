@@ -59,7 +59,7 @@ async def start_command(client: Bot, message: Message):
             base64_string = message.text.split(" ", 1)[1]
 
             if base64_string == "verified":
-                await message.reply_text("Token verified successfully! You can now access files.")
+                await message.reply_text("✅ Token verified successfully! You can now access files.")
                 return
 
             string = await decode(base64_string)
@@ -82,6 +82,7 @@ async def start_command(client: Bot, message: Message):
             else:
                 return
 
+            # Token check
             if not await has_valid_token(uid):
                 ts = int(time.time())
                 payload = f"{uid}:{ts}"
@@ -94,22 +95,28 @@ async def start_command(client: Bot, message: Message):
                 short_url = short_adrinolinks(url)
 
                 await message.reply_text(
-                    f"Access Locked!\n\nWatch ad to unlock: {short_url}\n\nToken valid for 12 hours after verification.",
+                    "🔒 Access Locked!
+
+👉 Watch ad to unlock: " + short_url + "
+
+⏳ Token valid for 12 hours after verification.",
                     disable_web_page_preview=True
                 )
                 return
 
-            temp_msg = await message.reply("Please wait...")
+            temp_msg = await message.reply("⏳ Please wait...")
 
             try:
                 messages = await get_messages(client, ids)
-            except:
-                await message.reply_text("Something went wrong!")
+            except Exception as e:
+                print(f"Error getting messages: {e}")
+                await message.reply_text("❌ Something went wrong! File not found.")
                 await temp_msg.delete()
                 return
 
             await temp_msg.delete()
 
+            # Send files
             for idx, msg in enumerate(messages):
 
                 if bool(CUSTOM_CAPTION) and bool(msg.document):
@@ -136,15 +143,32 @@ async def start_command(client: Bot, message: Message):
 
                 except FloodWait as e:
                     await asyncio.sleep(e.x)
+                    # Retry after flood wait
+                    try:
+                        copied = await msg.copy(
+                            chat_id=uid,
+                            caption=caption,
+                            parse_mode="html",
+                            reply_markup=reply_markup,
+                            protect_content=PROTECT_CONTENT
+                        )
+                        
+                        if FILE_AUTO_DELETE:
+                            asyncio.create_task(delete_file_later(client, copied, FILE_AUTO_DELETE))
+                    except:
+                        pass
 
-                except:
+                except Exception as e:
+                    print(f"Error copying message {idx}: {e}")
                     pass
 
             return
 
-        except:
+        except Exception as e:
+            print(f"Error in start command: {e}")
             pass
 
+    # Normal start message
     reply_markup = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("About", callback_data="about"),
@@ -196,6 +220,7 @@ async def send_text(client: Bot, message: Message):
 
         except FloodWait as e:
             await asyncio.sleep(e.x)
+            await broadcast_msg.copy(chat_id)
             successful += 1
 
         except UserIsBlocked:
@@ -212,10 +237,14 @@ async def send_text(client: Bot, message: Message):
         total += 1
 
     status = (
-        f"Successful: {successful}\n"
-        f"Blocked: {blocked}\n"
-        f"Deleted: {deleted}\n"
-        f"Unsuccessful: {unsuccessful}\n"
+        f"Successful: {successful}
+"
+        f"Blocked: {blocked}
+"
+        f"Deleted: {deleted}
+"
+        f"Unsuccessful: {unsuccessful}
+"
         f"Total: {total}"
     )
 
