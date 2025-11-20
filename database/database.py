@@ -1,42 +1,33 @@
-import pymongo, os
+from motor.motor_asyncio import AsyncIOMotorClient
 from config import DB_URL, DB_NAME
 
-dbclient = pymongo.MongoClient(DB_URL)
+# Mongo async client
+dbclient = AsyncIOMotorClient(DB_URL)
 database = dbclient[DB_NAME]
-user_data = database['users']
+user_data = database["users"]
 
 
-
-async def present_user(user_id : int):
-    found = user_data.find_one({'_id': user_id})
+# ------------------ Check Present User ------------------ #
+async def present_user(user_id: int) -> bool:
+    found = await user_data.find_one({"_id": user_id})
     return bool(found)
 
+
+# ------------------ Add User ------------------ #
 async def add_user(user_id: int):
-    user_data.insert_one({'_id': user_id})
-    return
+    await user_data.update_one(
+        {"_id": user_id},
+        {"$set": {"_id": user_id}},
+        upsert=True
+    )
 
-async def full_userbase():
-    user_docs = user_data.find()
-    user_ids = []
-    for doc in user_docs:
-        user_ids.append(doc['_id'])
-        
-    return user_ids
 
+# ------------------ Full User Base ------------------ #
+async def full_userbase() -> list:
+    cursor = user_data.find({})
+    return [doc["_id"] async for doc in cursor]
+
+
+# ------------------ Delete User ------------------ #
 async def del_user(user_id: int):
-    user_data.delete_one({'_id': user_id})
-    return
-
-
-
-
-
-
-
-
-
-# Jishu Developer 
-# Don't Remove Credit 🥺
-# Telegram Channel @Madflix_Bots
-# Backup Channel @JishuBotz
-# Developer @JishuDeveloper
+    await user_data.delete_one({"_id": user_id})
