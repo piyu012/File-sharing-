@@ -7,17 +7,17 @@ import base64
 
 from pyrogram import filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram.errors import FloodWait
+from pyrogram.errors import FloodWait, UserIsBlocked, InputUserDeactivated
 
 from bot import Bot
 from config import ADMINS, START_MSG, CUSTOM_CAPTION, DISABLE_CHANNEL_BUTTON, PROTECT_CONTENT, FILE_AUTO_DELETE
 from helper_func import subscribed, encode, decode, get_messages
 from database import add_user, del_user, full_userbase, present_user
 
-# Import token system from db_init
+# Import token system
 from db_init import has_valid_token, create_token
 
-# Import config for ad system
+# Import ad config
 from config import HMAC_SECRET, BASE_URL
 
 def sign(data: str) -> str:
@@ -55,7 +55,7 @@ async def start_command(client: Bot, message: Message):
         try:
             base64_string = message.text.split(" ", 1)[1]
             
-            # Skip token check for "verified" parameter
+            # Skip token check for verified parameter
             if base64_string == "verified":
                 await message.reply_text("Token verified successfully! You can now access files.")
                 return
@@ -78,7 +78,7 @@ async def start_command(client: Bot, message: Message):
             else:
                 return
 
-            # Token check
+            # Token check - single line strings only
             if not await has_valid_token(uid):
                 ts = int(time.time())
                 payload = f"{uid}:{ts}"
@@ -90,14 +90,13 @@ async def start_command(client: Bot, message: Message):
                 url = f"{BASE_URL}/watch?data={encoded}"
                 short_url = short_adrinolinks(url)
                 
-                await message.reply_text(
-                    f"Access Locked!
+                lock_msg = f"Access Locked!
 
 Watch ad to unlock: {short_url}
 
-Token valid for 12 hours after verification.",
-                    disable_web_page_preview=True
-                )
+Token valid for 12 hours after verification."
+                
+                await message.reply_text(lock_msg, disable_web_page_preview=True)
                 return
             
             temp_msg = await message.reply("Please wait...")
@@ -113,7 +112,10 @@ Token valid for 12 hours after verification.",
             
             for idx, msg in enumerate(messages):
                 if bool(CUSTOM_CAPTION) and bool(msg.document):
-                    caption = CUSTOM_CAPTION.format(previouscaption="" if not msg.caption else msg.caption.html, filename=msg.document.file_name)
+                    caption = CUSTOM_CAPTION.format(
+                        previouscaption="" if not msg.caption else msg.caption.html,
+                        filename=msg.document.file_name
+                    )
                 else:
                     caption = "" if not msg.caption else msg.caption.html
 
