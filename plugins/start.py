@@ -15,8 +15,6 @@ from config import (
     PROTECT_CONTENT, FILE_AUTO_DELETE, HMAC_SECRET, BASE_URL
 )
 from helper_func import subscribed, encode, decode, get_messages
-
-# DB functions
 from db_init import add_user, del_user, full_userbase, present_user, has_valid_token, create_token
 
 
@@ -59,7 +57,7 @@ async def start_command(client: Bot, message: Message):
             base64_string = message.text.split(" ", 1)[1]
 
             if base64_string == "verified":
-                await message.reply_text("✅ Token verified successfully! You can now access files.")
+                await message.reply_text("Token verified successfully! You can now access files.")
                 return
 
             string = await decode(base64_string)
@@ -82,7 +80,6 @@ async def start_command(client: Bot, message: Message):
             else:
                 return
 
-            # Token check
             if not await has_valid_token(uid):
                 ts = int(time.time())
                 payload = f"{uid}:{ts}"
@@ -94,29 +91,26 @@ async def start_command(client: Bot, message: Message):
                 url = f"{BASE_URL}/watch?data={encoded}"
                 short_url = short_adrinolinks(url)
 
-                await message.reply_text(
-                    "🔒 Access Locked!
+                lock_text = "Access Locked!
 
-👉 Watch ad to unlock: " + short_url + "
+Watch ad to unlock: " + short_url + "
 
-⏳ Token valid for 12 hours after verification.",
-                    disable_web_page_preview=True
-                )
+Token valid for 12 hours after verification."
+                await message.reply_text(lock_text, disable_web_page_preview=True)
                 return
 
-            temp_msg = await message.reply("⏳ Please wait...")
+            temp_msg = await message.reply("Please wait...")
 
             try:
                 messages = await get_messages(client, ids)
             except Exception as e:
                 print(f"Error getting messages: {e}")
-                await message.reply_text("❌ Something went wrong! File not found.")
+                await message.reply_text("Something went wrong! File not found.")
                 await temp_msg.delete()
                 return
 
             await temp_msg.delete()
 
-            # Send files
             for idx, msg in enumerate(messages):
 
                 if bool(CUSTOM_CAPTION) and bool(msg.document):
@@ -143,7 +137,6 @@ async def start_command(client: Bot, message: Message):
 
                 except FloodWait as e:
                     await asyncio.sleep(e.x)
-                    # Retry after flood wait
                     try:
                         copied = await msg.copy(
                             chat_id=uid,
@@ -168,7 +161,6 @@ async def start_command(client: Bot, message: Message):
             print(f"Error in start command: {e}")
             pass
 
-    # Normal start message
     reply_markup = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("About", callback_data="about"),
@@ -236,16 +228,10 @@ async def send_text(client: Bot, message: Message):
 
         total += 1
 
-    status = (
-        f"Successful: {successful}
-"
-        f"Blocked: {blocked}
-"
-        f"Deleted: {deleted}
-"
-        f"Unsuccessful: {unsuccessful}
-"
-        f"Total: {total}"
-    )
+    status = "Successful: " + str(successful) + "
+Blocked: " + str(blocked) + "
+Deleted: " + str(deleted) + "
+Unsuccessful: " + str(unsuccessful) + "
+Total: " + str(total)
 
     return await pls_wait.edit(status)
