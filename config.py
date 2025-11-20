@@ -31,7 +31,7 @@ try:
 except ValueError:
     raise Exception("Your Admins list does not contain valid integers.")
 
-# ====== AD SYSTEM (NEW) ======
+# Ad System
 HMAC_SECRET = os.getenv("HMAC_SECRET", "your_secret_key_here")
 BASE_URL = os.getenv("BASE_URL", "https://your-app.onrender.com")
 BOT_USERNAME = os.getenv("BOT_USERNAME", "YourBotUsername")
@@ -42,12 +42,8 @@ CUSTOM_CAPTION = os.environ.get("CUSTOM_CAPTION", None)
 PROTECT_CONTENT = True if os.environ.get('PROTECT_CONTENT', "False") == "True" else False
 DISABLE_CHANNEL_BUTTON = os.environ.get("DISABLE_CHANNEL_BUTTON", None) == 'True'
 
-START_MSG = os.environ.get("START_MESSAGE", "Hello {first}!
-
-I can store private files and share via special links.")
-FORCE_MSG = os.environ.get("FORCE_SUB_MESSAGE", "Hello {first}!
-
-You need to join my channel to use me.")
+START_MSG = os.environ.get("START_MESSAGE", "Hello {first}! I can store private files and share via special links.")
+FORCE_MSG = os.environ.get("FORCE_SUB_MESSAGE", "Hello {first}! You need to join my channel to use me.")
 
 # Logging
 LOGGER = logging.getLogger(__name__)
