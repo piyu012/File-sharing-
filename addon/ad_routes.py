@@ -9,7 +9,6 @@ from fastapi.responses import HTMLResponse
 from datetime import datetime
 from db_init import tokens, has_valid_token, create_token, activate_token
 from config import HMAC_SECRET, BASE_URL, BOT_USERNAME, ADRINO_API, OWNER_ID
-from bot import Bot
 
 router = APIRouter()
 
@@ -69,20 +68,13 @@ async def callback(data: str):
     # Notify user via bot
     from main import bot
     try:
-        await bot.send_message(
-            uid,
-            f"✅ आपका token verify हो गया!
-⏳ Valid for: 12 hours"
-        )
+        await bot.send_message(uid, "Token verified successfully! Valid for 12 hours.")
     except:
         pass
 
     # Notify admin
     try:
-        await bot.send_message(
-            OWNER_ID,
-            f"🔔 Token activated by user {uid}"
-        )
+        await bot.send_message(OWNER_ID, f"Token activated by user {uid}")
     except:
         pass
 
@@ -94,7 +86,7 @@ async def callback(data: str):
       <title>Success!</title>
     </head>
     <body>
-      <h2>✅ Token Activated!</h2>
+      <h2>Token Activated!</h2>
       <p>Redirecting to Telegram...</p>
       <a href="{deep_link}">Click here if not redirected</a>
     </body>
