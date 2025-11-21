@@ -1,9 +1,6 @@
 pyrogram==2.0.106
-TgCrypto
-pymongo==3.12.3
-motor==2.5.1
-dnspython
-aiohttp
-requests
-fastapi
-uvicorn[standard]
+TgCrypto==1.2.5
+motor==3.3.2
+python-dotenv==1.0.0
+requests==2.31.0
+dnspython==2.4.2
