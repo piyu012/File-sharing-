@@ -2,6 +2,7 @@ pyrogram==2.0.106
 TgCrypto
 pymongo==3.12.3
 motor==2.5.1
+dnspython
 aiohttp
 requests
 fastapi
