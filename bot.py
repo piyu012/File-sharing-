@@ -1,3 +1,4 @@
+# token_ad_bot_fixed.py
 import os
 import asyncio
 from datetime import datetime, timedelta
@@ -17,15 +18,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuration
-API_ID = int(os.getenv('API_ID'))
-API_HASH = os.getenv('API_HASH')
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-MONGODB_URI = os.getenv('MONGODB_URI')
-ADMIN_ID = int(os.getenv('ADMIN_ID'))
+# Configuration (provide safe defaults where possible)
+API_ID = int(os.getenv('API_ID', 0))
+API_HASH = os.getenv('API_HASH', '')
+BOT_TOKEN = os.getenv('BOT_TOKEN', '')
+MONGODB_URI = os.getenv('MONGODB_URI', '')
+ADMIN_ID = int(os.getenv('ADMIN_ID', 0))
 TOKEN_VALIDITY_HOURS = int(os.getenv('TOKEN_VALIDITY_HOURS', 12))
-AD_URL = os.getenv('AD_URL')
+AD_URL = os.getenv('AD_URL', 'https://example.com/ad')
 STORAGE_CHANNEL_ID = int(os.getenv('STORAGE_CHANNEL_ID', 0))
+
+# Validate critical config early
+if not BOT_TOKEN:
+    logger.error("BOT_TOKEN not set. Exiting.")
+    raise SystemExit(1)
+if not MONGODB_URI:
+    logger.error("MONGODB_URI not set. Exiting.")
+    raise SystemExit(1)
 
 # Initialize Pyrogram Client
 app = Client(
@@ -35,26 +44,32 @@ app = Client(
     bot_token=BOT_TOKEN
 )
 
-# MongoDB Setup
+# MongoDB Setup (synchronous pymongo)
 mongo_client = MongoClient(MONGODB_URI)
 db = mongo_client['telegram_bot']
 users_collection = db['users']
 videos_collection = db['videos']
 
-# Create indexes
-users_collection.create_index("user_id", unique=True)
-users_collection.create_index("token_expires_at")
-videos_collection.create_index("file_id", unique=True)
+# Create indexes (safe to call repeatedly)
+try:
+    users_collection.create_index("user_id", unique=True)
+    users_collection.create_index("token_expires_at")
+    videos_collection.create_index("file_id", unique=True)
+except Exception as e:
+    logger.warning(f"Index creation warning: {e}")
 
-
-# Helper Functions
+# Helper Functions (they are async so you can 'await' them in handlers)
 async def get_user(user_id: int):
-    """Get user from database"""
-    return users_collection.find_one({"user_id": user_id})
-
+    """Return user document or None."""
+    try:
+        return users_collection.find_one({"user_id": user_id})
+    except Exception as e:
+        logger.error(f"DB get_user error: {e}")
+        return None
 
 async def create_user(user_id: int, username: str = None):
-    """Create new user in database"""
+    """Create new user document (no-op if exists)."""
+    now = datetime.utcnow()
     user_data = {
         "user_id": user_id,
         "username": username,
@@ -62,442 +77,382 @@ async def create_user(user_id: int, username: str = None):
         "token_expires_at": None,
         "last_ad_view": None,
         "videos_uploaded": 0,
-        "joined_at": datetime.utcnow()
+        "joined_at": now
     }
-    users_collection.insert_one(user_data)
-    return user_data
+    try:
+        users_collection.update_one({"user_id": user_id}, {"$setOnInsert": user_data}, upsert=True)
+        return users_collection.find_one({"user_id": user_id})
+    except Exception as e:
+        logger.error(f"DB create_user error: {e}")
+        return None
 
-
-async def is_token_valid(user_id: int):
-    """Check if user's token is valid"""
+async def is_token_valid(user_id: int) -> bool:
+    """Return True if token exists and not expired."""
     user = await get_user(user_id)
-    if not user or not user.get('has_token'):
+    if not user or not user.get("has_token"):
         return False
-    
-    expires_at = user.get('token_expires_at')
-    if not expires_at:
+    expires_at = user.get("token_expires_at")
+    if not isinstance(expires_at, datetime):
         return False
-    
     return datetime.utcnow() < expires_at
 
-
 async def activate_token(user_id: int):
-    """Activate token for user"""
+    """Activate token: set has_token True and token_expires_at."""
     expires_at = datetime.utcnow() + timedelta(hours=TOKEN_VALIDITY_HOURS)
-    users_collection.update_one(
-        {"user_id": user_id},
-        {"$set": {
-            "has_token": True,
-            "token_expires_at": expires_at,
-            "last_ad_view": datetime.utcnow()
-        }}
-    )
-    return expires_at
+    try:
+        users_collection.update_one(
+            {"user_id": user_id},
+            {"$set": {
+                "has_token": True,
+                "token_expires_at": expires_at,
+                "last_ad_view": datetime.utcnow()
+            }},
+            upsert=True
+        )
+        return expires_at
+    except Exception as e:
+        logger.error(f"activate_token error: {e}")
+        return None
 
-
-async def needs_ad_view(user_id: int):
-    """Check if user needs to view ad"""
+async def needs_ad_view(user_id: int) -> bool:
+    """Return True if user needs to view ad before continuing."""
     user = await get_user(user_id)
     if not user:
         return True
-    
-    last_ad_view = user.get('last_ad_view')
-    if not last_ad_view:
+    last = user.get("last_ad_view")
+    if not isinstance(last, datetime):
         return True
-    
-    # Check if 12 hours passed since last ad view
-    return datetime.utcnow() - last_ad_view > timedelta(hours=TOKEN_VALIDITY_HOURS)
-
+    return (datetime.utcnow() - last) > timedelta(hours=TOKEN_VALIDITY_HOURS)
 
 async def cleanup_expired_tokens():
-    """Remove expired tokens automatically"""
-    result = users_collection.update_many(
-        {"token_expires_at": {"$lt": datetime.utcnow()}},
-        {"$set": {"has_token": False, "token_expires_at": None}}
-    )
-    if result.modified_count > 0:
-        logger.info(f"Cleaned up {result.modified_count} expired tokens")
-
+    """Reset has_token for expired tokens."""
+    try:
+        result = users_collection.update_many(
+            {"token_expires_at": {"$lt": datetime.utcnow()}},
+            {"$set": {"has_token": False, "token_expires_at": None}}
+        )
+        if result.modified_count:
+            logger.info(f"Cleaned up {result.modified_count} expired tokens")
+    except Exception as e:
+        logger.error(f"cleanup_expired_tokens error: {e}")
 
 async def save_video(file_id: str, user_id: int, file_name: str):
-    """Save video to database"""
-    video_data = {
-        "file_id": file_id,
-        "user_id": user_id,
-        "file_name": file_name,
-        "uploaded_at": datetime.utcnow()
-    }
-    videos_collection.insert_one(video_data)
+    """Save video metadata to DB."""
+    try:
+        videos_collection.insert_one({
+            "file_id": file_id,
+            "user_id": user_id,
+            "file_name": file_name,
+            "uploaded_at": datetime.utcnow()
+        })
+    except Exception as e:
+        logger.error(f"save_video error: {e}")
 
-
-# Command Handlers
+# -----------------------
+# START COMMAND
+# -----------------------
 @app.on_message(filters.command("start") & filters.private)
 async def start_command(client: Client, message: Message):
     user_id = message.from_user.id
-    username = message.from_user.username
-    
-    # Create user if doesn't exist
+    username = message.from_user.username or ""
+
+    # Ensure user exists in DB
     user = await get_user(user_id)
     if not user:
-        await create_user(user_id, username)
-    
-    # Check token status
-    has_valid_token = await is_token_valid(user_id)
-    
-    if has_valid_token:
-        user = await get_user(user_id)
-        expires_at = user['token_expires_at']
-        time_left = expires_at - datetime.utcnow()
-        hours_left = int(time_left.total_seconds() / 3600)
-        
-        welcome_text = f"""
-✅ **Welcome Back!**
+        user = await create_user(user_id, username)
 
-🎟️ **Token Status:** Active
-⏰ **Expires In:** {hours_left} hours
+    # Check if token currently valid
+    valid = await is_token_valid(user_id)
 
-**Commands:**
-📤 /upload - Upload video aur link generate karo
-📊 /stats - Apne stats dekho
-❓ /help - Help dekhein
+    if valid:
+        user = await get_user(user_id)  # fresh
+        expires_at = user.get("token_expires_at")
+        # safe compute remaining time
+        if isinstance(expires_at, datetime):
+            seconds_left = max(0, int((expires_at - datetime.utcnow()).total_seconds()))
+            hours_left = seconds_left // 3600
+            minutes_left = (seconds_left % 3600) // 60
+            expires_str = f"{hours_left}h {minutes_left}m"
+        else:
+            expires_str = "unknown"
 
-**Video kaise upload karein:**
-1. /upload command use karein
-2. Video file send karein
-3. Link milega jo aap share kar sakte ho!
-"""
-        
+        welcome_text = (
+            "✅ *Welcome Back!*\n\n"
+            f"🎟️ *Token Status:* Active\n"
+            f"⏰ *Expires In:* {expires_str}\n\n"
+            "*Commands:*\n"
+            "📤 /upload - Upload video and generate link\n"
+            "📊 /stats - View your stats\n"
+            "❓ /help - Show help\n\n"
+            "*How to upload video:*\n"
+            "1. Send /upload\n"
+            "2. Send your video file\n"
+            "3. Get shareable link\n"
+        )
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📤 Upload Video", callback_data="upload")],
             [InlineKeyboardButton("📊 My Stats", callback_data="stats")]
         ])
-    else:
-        welcome_text = f"""
-👋 **Welcome to Token Ad Bot!**
 
-🎟️ **Token Status:** Inactive
+        await message.reply_text(welcome_text, reply_markup=keyboard)
+        return
 
-Bot use karne ke liye aapko token activate karna hoga!
-
-**Token Activation Steps:**
-1. Niche "View Ad" button click karein
-2. Ad page ko 10 seconds tak open rakhein
-3. Wapas aayein aur "Verify Token" dabayein
-4. Token 12 hours ke liye activate ho jayega!
-
-⚠️ **Note:** Token har 12 ghante baad expire hota hai. Renew karne ke liye dubara ad dekhna hoga.
-"""
-        
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📺 View Ad & Get Token", url=AD_URL)],
-            [InlineKeyboardButton("✅ Verify Token", callback_data="verify_token")]
-        ])
-    
+    # If not valid -> prompt to view ad + verify
+    welcome_text = (
+        "👋 *Welcome to Token Ad Bot!*\n\n"
+        "🎟️ *Token Status:* Inactive\n\n"
+        "To use the bot you must activate a token.\n\n"
+        "*Token Activation Steps:*\n"
+        "1. Click 'View Ad' below\n"
+        "2. Keep the ad page open for ~10 seconds\n"
+        "3. Come back and press 'Verify Token'\n"
+        "4. Token will be valid for 12 hours\n\n"
+        "⚠️ Token expires after 12 hours; watch ad again to renew."
+    )
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📺 View Ad & Get Token", url=AD_URL)],
+        [InlineKeyboardButton("✅ Verify Token", callback_data="verify_token")]
+    ])
     await message.reply_text(welcome_text, reply_markup=keyboard)
 
-
+# -----------------------
+# UPLOAD COMMAND
+# -----------------------
 @app.on_message(filters.command("upload") & filters.private)
 async def upload_command(client: Client, message: Message):
     user_id = message.from_user.id
-    
-    # Check if user needs to view ad
+
     if await needs_ad_view(user_id):
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📺 View Ad", url=AD_URL)],
             [InlineKeyboardButton("✅ Verify & Continue", callback_data="verify_token")]
         ])
-        
         await message.reply_text(
-            "⏰ **12 hours ho gaye!**\n\n"
-            "Bot continue use karne ke liye ad dekhein aur verify karein.",
+            "⏰ Your token needs renewal. Watch the ad and verify to continue.",
             reply_markup=keyboard
         )
         return
-    
-    # Check token validity
+
     if not await is_token_valid(user_id):
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📺 View Ad & Get Token", url=AD_URL)],
             [InlineKeyboardButton("✅ Verify Token", callback_data="verify_token")]
         ])
-        
         await message.reply_text(
-            "❌ **Token Expired!**\n\n"
-            "Pehle token activate karein.",
+            "❌ Token expired. Please activate token first.",
             reply_markup=keyboard
         )
         return
-    
+
     await message.reply_text(
-        "📤 **Upload your video:**\n\n"
-        "Video file send karein (MP4, MKV, etc.)\n"
-        "Max size: 2GB"
+        "📤 *Upload your video:*\n\n"
+        "Send the video file (MP4, MKV, etc.). Max size: 2GB"
     )
 
-
+# -----------------------
+# VIDEO HANDLER
+# -----------------------
 @app.on_message(filters.video & filters.private)
 async def handle_video(client: Client, message: Message):
     user_id = message.from_user.id
-    
-    # Check token
+
     if not await is_token_valid(user_id):
-        await message.reply_text("❌ Token invalid! Pehle /start use karein.")
+        await message.reply_text("❌ Token invalid! Please run /start.")
         return
-    
-    # Check if needs ad view
+
     if await needs_ad_view(user_id):
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📺 View Ad", url=AD_URL)],
             [InlineKeyboardButton("✅ Verify", callback_data="verify_token")]
         ])
-        await message.reply_text(
-            "⏰ 12 hours complete! Ad dekhein.",
-            reply_markup=keyboard
-        )
+        await message.reply_text("⏰ 12 hours passed — please view ad and verify.", reply_markup=keyboard)
         return
-    
+
     processing_msg = await message.reply_text("⏳ Processing video...")
-    
     try:
-        # Forward to storage channel if configured
+        # store video to channel if configured
         if STORAGE_CHANNEL_ID:
             stored_msg = await message.forward(STORAGE_CHANNEL_ID)
             file_id = stored_msg.video.file_id
         else:
             file_id = message.video.file_id
-        
-        # Save to database
-        await save_video(
-            file_id,
-            user_id,
-            message.video.file_name or "video.mp4"
-        )
-        
-        # Update user stats
-        users_collection.update_one(
-            {"user_id": user_id},
-            {"$inc": {"videos_uploaded": 1}}
-        )
-        
-        # Generate shareable link
-        bot_username = (await client.get_me()).username
+
+        await save_video(file_id, user_id, message.video.file_name or "video")
+
+        users_collection.update_one({"user_id": user_id}, {"$inc": {"videos_uploaded": 1}})
+
+        bot_username = (await client.get_me()).username or ""
         video_link = f"https://t.me/{bot_username}?start=video_{file_id}"
-        
-        success_text = f"""
-✅ **Video uploaded successfully!**
 
-📎 **Shareable Link:**
-`{video_link}`
+        success_text = (
+            "✅ *Video uploaded successfully!*\n\n"
+            f"📎 Shareable Link:\n`{video_link}`\n\n"
+            f"📊 Total videos: {get_user_sync_count(user_id)}"
+        )
 
-**Link ko copy karke share karein!**
-
-📊 Total videos: {(await get_user(user_id))['videos_uploaded']}
-"""
-        
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📤 Upload Another", callback_data="upload")]
-        ])
-        
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("📤 Upload Another", callback_data="upload")]])
         await processing_msg.edit_text(success_text, reply_markup=keyboard)
-        
     except Exception as e:
         logger.error(f"Error processing video: {e}")
-        await processing_msg.edit_text("❌ Error uploading video. Try again.")
+        await processing_msg.edit_text("❌ Error uploading video. Try again later.")
 
+# small helper to get updated video count synchronously for display (safe)
+def get_user_sync_count(user_id: int) -> int:
+    try:
+        u = users_collection.find_one({"user_id": user_id})
+        return int(u.get("videos_uploaded", 0)) if u else 0
+    except:
+        return 0
 
+# -----------------------
+# STATS & HELP
+# -----------------------
 @app.on_message(filters.command("stats") & filters.private)
 async def stats_command(client: Client, message: Message):
     user_id = message.from_user.id
     user = await get_user(user_id)
-    
     if not user:
-        await message.reply_text("❌ User not found. Use /start first.")
-        return
-    
-    has_valid_token = await is_token_valid(user_id)
-    
-    if has_valid_token:
-        expires_at = user['token_expires_at']
-        time_left = expires_at - datetime.utcnow()
-        hours_left = int(time_left.total_seconds() / 3600)
+        return await message.reply_text("❌ User not found. Use /start first.")
+
+    valid = await is_token_valid(user_id)
+    if valid:
+        expires_at = user.get("token_expires_at")
+        seconds_left = max(0, int((expires_at - datetime.utcnow()).total_seconds())) if isinstance(expires_at, datetime) else 0
+        hours_left = seconds_left // 3600
         token_status = f"✅ Active ({hours_left}h left)"
     else:
         token_status = "❌ Inactive"
-    
-    stats_text = f"""
-📊 **Your Statistics**
 
-👤 **User ID:** `{user_id}`
-🎟️ **Token Status:** {token_status}
-📤 **Videos Uploaded:** {user['videos_uploaded']}
-📅 **Joined:** {user['joined_at'].strftime('%d %b %Y')}
-"""
-    
+    stats_text = (
+        "📊 *Your Statistics*\n\n"
+        f"👤 User ID: `{user_id}`\n"
+        f"🎟️ Token Status: {token_status}\n"
+        f"📤 Videos Uploaded: {user.get('videos_uploaded', 0)}\n"
+        f"📅 Joined: {user.get('joined_at').strftime('%d %b %Y') if isinstance(user.get('joined_at'), datetime) else 'unknown'}\n"
+    )
     await message.reply_text(stats_text)
-
 
 @app.on_message(filters.command("help") & filters.private)
 async def help_command(client: Client, message: Message):
-    help_text = """
-❓ **Help & Commands**
-
-**Basic Commands:**
-/start - Bot start karein
-/upload - Video upload karein
-/stats - Apne stats dekho
-/help - Ye message
-
-**Token System:**
-• Token har 12 ghante valid rehta hai
-• Renew karne ke liye ad dekhna mandatory hai
-• Bina token ke bot use nahi kar sakte
-
-**Video Upload:**
-1. /upload command use karein
-2. Video file send karein (max 2GB)
-3. Shareable link milega
-
-**Questions?**
-Contact admin for support.
-"""
-    
+    help_text = (
+        "❓ *Help & Commands*\n\n"
+        "/start - Start the bot\n"
+        "/upload - Upload a video\n"
+        "/stats - Your stats\n"
+        "/help - This help\n\n"
+        "Token system: token valid for 12h, renew by viewing ad."
+    )
     await message.reply_text(help_text)
 
-
-# Callback Query Handlers
+# -----------------------
+# CALLBACKS
+# -----------------------
 @app.on_callback_query(filters.regex("^verify_token$"))
 async def verify_token_callback(client: Client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
-    
-    # Activate token
     expires_at = await activate_token(user_id)
-    
-    success_text = f"""
-✅ **Token Activated Successfully!**
+    if not expires_at:
+        await callback_query.answer("Token activation failed.", show_alert=True)
+        return
 
-⏰ **Valid Until:** {expires_at.strftime('%d %b %Y, %I:%M %p')} UTC
-⏳ **Duration:** {TOKEN_VALIDITY_HOURS} hours
-
-Ab aap bot use kar sakte ho!
-
-**Commands:**
-📤 /upload - Video upload karein
-📊 /stats - Stats dekhein
-"""
-    
+    success_text = (
+        "✅ *Token Activated Successfully!*\n\n"
+        f"⏰ Valid Until: {expires_at.strftime('%d %b %Y, %I:%M %p')} UTC\n"
+        f"⏳ Duration: {TOKEN_VALIDITY_HOURS} hours\n\n"
+        "Now you can use the bot.\n"
+        "Commands: /upload, /stats"
+    )
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("📤 Upload Video", callback_data="upload")],
         [InlineKeyboardButton("📊 My Stats", callback_data="stats")]
     ])
-    
     await callback_query.message.edit_text(success_text, reply_markup=keyboard)
     await callback_query.answer("✅ Token activated!", show_alert=True)
 
-
 @app.on_callback_query(filters.regex("^upload$"))
 async def upload_callback(client: Client, callback_query: CallbackQuery):
-    await callback_query.message.reply_text(
-        "📤 **Upload your video:**\n\n"
-        "Video file send karein (MP4, MKV, etc.)"
-    )
+    await callback_query.message.reply_text("📤 Upload: send your video file (MP4, MKV, etc.)")
     await callback_query.answer()
-
 
 @app.on_callback_query(filters.regex("^stats$"))
 async def stats_callback(client: Client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
     user = await get_user(user_id)
-    
-    has_valid_token = await is_token_valid(user_id)
-    
-    if has_valid_token:
-        expires_at = user['token_expires_at']
-        time_left = expires_at - datetime.utcnow()
-        hours_left = int(time_left.total_seconds() / 3600)
+    if not user:
+        await callback_query.answer("User not found.", show_alert=True)
+        return
+
+    valid = await is_token_valid(user_id)
+    if valid:
+        expires_at = user.get("token_expires_at")
+        seconds_left = max(0, int((expires_at - datetime.utcnow()).total_seconds())) if isinstance(expires_at, datetime) else 0
+        hours_left = seconds_left // 3600
         token_status = f"✅ Active ({hours_left}h left)"
     else:
         token_status = "❌ Inactive"
-    
-    stats_text = f"""
-📊 **Your Statistics**
 
-🎟️ **Token:** {token_status}
-📤 **Videos:** {user['videos_uploaded']}
-📅 **Joined:** {user['joined_at'].strftime('%d %b %Y')}
-"""
-    
+    stats_text = (
+        "📊 *Your Statistics*\n\n"
+        f"🎟️ Token: {token_status}\n"
+        f"📤 Videos: {user.get('videos_uploaded', 0)}\n"
+        f"📅 Joined: {user.get('joined_at').strftime('%d %b %Y') if isinstance(user.get('joined_at'), datetime) else 'unknown'}"
+    )
     await callback_query.answer(stats_text, show_alert=True)
 
-
-# Background task for cleaning expired tokens
+# -----------------------
+# BACKGROUND CLEANUP TASK
+# -----------------------
 async def cleanup_task():
     while True:
         try:
             await cleanup_expired_tokens()
-            await asyncio.sleep(3600)  # Run every hour
+            await asyncio.sleep(3600)
         except Exception as e:
             logger.error(f"Cleanup task error: {e}")
-            await asyncio.sleep(300)  # Retry after 5 minutes
+            await asyncio.sleep(300)
 
-
-# Admin Commands
+# -----------------------
+# ADMIN COMMANDS
+# -----------------------
 @app.on_message(filters.command("broadcast") & filters.user(ADMIN_ID))
 async def broadcast_command(client: Client, message: Message):
     if len(message.command) < 2:
         await message.reply_text("Usage: /broadcast <message>")
         return
-    
     broadcast_text = message.text.split(None, 1)[1]
     users = users_collection.find()
-    
-    success = 0
-    failed = 0
-    
+    success = failed = 0
     status_msg = await message.reply_text("📡 Broadcasting...")
-    
-    for user in users:
+    for u in users:
         try:
-            await client.send_message(user['user_id'], broadcast_text)
+            await client.send_message(u['user_id'], broadcast_text)
             success += 1
-        except:
+        except Exception:
             failed += 1
-    
-    await status_msg.edit_text(
-        f"✅ Broadcast complete!\n\n"
-        f"Success: {success}\nFailed: {failed}"
-    )
-
+    await status_msg.edit_text(f"✅ Broadcast complete!\nSuccess: {success}\nFailed: {failed}")
 
 @app.on_message(filters.command("botstats") & filters.user(ADMIN_ID))
 async def bot_stats_command(client: Client, message: Message):
     total_users = users_collection.count_documents({})
-    active_tokens = users_collection.count_documents({
-        "token_expires_at": {"$gt": datetime.utcnow()}
-    })
+    active_tokens = users_collection.count_documents({"token_expires_at": {"$gt": datetime.utcnow()}})
     total_videos = videos_collection.count_documents({})
-    
-    stats_text = f"""
-🤖 **Bot Statistics**
-
-👥 **Total Users:** {total_users}
-✅ **Active Tokens:** {active_tokens}
-🎬 **Total Videos:** {total_videos}
-📅 **Uptime:** Running smoothly
-"""
-    
+    stats_text = (
+        "🤖 *Bot Statistics*\n\n"
+        f"👥 Total Users: {total_users}\n"
+        f"✅ Active Tokens: {active_tokens}\n"
+        f"🎬 Total Videos: {total_videos}\n"
+    )
     await message.reply_text(stats_text)
 
-
-# Main function
+# -----------------------
+# STARTUP
+# -----------------------
 async def main():
     await app.start()
     logger.info("Bot started successfully!")
-    
-    # Start cleanup task
+    # start cleanup background task
     asyncio.create_task(cleanup_task())
-    
     await asyncio.Event().wait()
-
 
 if __name__ == "__main__":
     app.run(main())
