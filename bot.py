@@ -6,6 +6,7 @@ import pyrogram.utils
 
 pyrogram.utils.MIN_CHANNEL_ID = -1009999999999
 
+
 class Bot(Client):
     def __init__(self):
         super().__init__(
@@ -23,7 +24,8 @@ class Bot(Client):
         usr_bot_me = await self.get_me()
         self.uptime = datetime.now()
         self.start_time = datetime.now().timestamp()
-        
+
+        # Force Sub Channel Link
         if FORCE_SUB_CHANNEL:
             try:
                 link = (await self.get_chat(FORCE_SUB_CHANNEL)).invite_link
@@ -35,7 +37,8 @@ class Bot(Client):
                 self.LOGGER.warning(a)
                 self.LOGGER.warning("Bot can't export invite link from force sub channel!")
                 self.invitelink = None
-        
+
+        # Test DB Channel
         try:
             db_channel = await self.get_chat(CHANNEL_ID)
             self.db_channel = db_channel
@@ -43,13 +46,17 @@ class Bot(Client):
             await test.delete()
         except Exception as e:
             self.LOGGER.warning(e)
-            self.LOGGER.warning(f"Make sure bot is admin in DB Channel, and double check the CHANNEL_ID value: {CHANNEL_ID}")
+            self.LOGGER.warning(
+                f"Make sure bot is admin in DB Channel, and double check the CHANNEL_ID value: {CHANNEL_ID}"
+            )
             self.LOGGER.info("Bot Stopped. Join @Madflix_Bots for support")
             exit()
 
-        self.LOGGER.info(f"Bot Running..!
+        # 🔥 FIXED — This f-string was broken earlier
+        self.LOGGER.info(
+            f"Bot Running..! Created by @JishuDeveloper"
+        )
 
-Created by @JishuDeveloper")
         self.username = usr_bot_me.username
 
     async def stop(self, *args):
