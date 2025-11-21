@@ -4,16 +4,16 @@ from logging.handlers import RotatingFileHandler
 
 # Bot credentials
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
-API_ID = int(os.environ.get("API_ID", ""))
+API_ID = int(os.environ.get("API_ID", "0"))
 API_HASH = os.environ.get("API_HASH", "")
-OWNER_ID = int(os.environ.get("OWNER_ID", ""))
+OWNER_ID = int(os.environ.get("OWNER_ID", "0"))
 
 # Database
 DB_URL = os.environ.get("DB_URL", "")
 DB_NAME = os.environ.get("DB_NAME", "filesharebott")
 
 # Channels
-CHANNEL_ID = int(os.environ.get("CHANNEL_ID", ""))
+CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "0"))
 FORCE_SUB_CHANNEL = int(os.environ.get("FORCE_SUB_CHANNEL", "0"))
 
 # File settings
@@ -36,16 +36,17 @@ HMAC_SECRET = os.getenv("HMAC_SECRET", "your_secret_key_here")
 BASE_URL = os.getenv("BASE_URL", "https://your-app.onrender.com")
 ADRINO_API = os.getenv("ADRINO_API", None)
 
-# Messages
-START_MSG = os.environ.get("START_MESSAGE", "Hello {first}
-
-I can store files and give you shareable links!")
+# Messages (FIXED MULTILINE STRING)
+START_MSG = os.environ.get(
+    "START_MESSAGE",
+    "Hello {first}\n\nI can store files and give you shareable links!"
+)
 
 CUSTOM_CAPTION = os.environ.get("CUSTOM_CAPTION", None)
 
 # Buttons
-DISABLE_CHANNEL_BUTTON = os.environ.get("DISABLE_CHANNEL_BUTTON", None) == 'True'
-PROTECT_CONTENT = os.environ.get("PROTECT_CONTENT", "False") == 'True'
+DISABLE_CHANNEL_BUTTON = os.environ.get("DISABLE_CHANNEL_BUTTON", "False") == "True"
+PROTECT_CONTENT = os.environ.get("PROTECT_CONTENT", "False") == "True"
 
 # Logging
 logging.basicConfig(
@@ -57,6 +58,7 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+
 logging.getLogger("pyrogram").setLevel(logging.WARNING)
 
 LOGGER = logging.getLogger(__name__)
