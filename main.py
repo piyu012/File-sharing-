@@ -2,7 +2,6 @@ import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from bot import Bot
-from addon.ad_routes import router as ad_router
 
 bot = Bot()
 
