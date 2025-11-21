@@ -1,8 +1,8 @@
-pyrogram
+pyrogram==2.0.106
 TgCrypto
-pymongo[srv]
-motor
+pymongo==3.12.3
+motor==2.5.1
 aiohttp
 requests
 fastapi
-uvicorn
+uvicorn[standard]
