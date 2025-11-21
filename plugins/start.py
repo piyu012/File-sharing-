@@ -88,17 +88,24 @@ async def start_command(client: Bot, message: Message):
             encoded = message.text.split(" ", 1)[1]
             decoded = await decode(encoded)
             parts = decoded.split("-")
-        except:
+        except Exception:
             return await message.reply("❌ Invalid or corrupted link!")
 
         # -------- SINGLE FILE --------
         if len(parts) == 2:
-            ids = [int(parts[1])]
+            try:
+                ids = [int(parts[1])]
+            except ValueError:
+                return await message.reply("❌ Invalid file id!")
 
         # -------- MULTI FILE --------
         elif len(parts) == 3:
-            start_id = int(parts[1])
-            end_id = int(parts[2])
+            try:
+                start_id = int(parts[1])
+                end_id = int(parts[2])
+            except ValueError:
+                return await message.reply("❌ Invalid batch link!")
+
             ids = list(range(min(start_id, end_id), max(start_id, end_id) + 1))
 
         else:
@@ -130,7 +137,7 @@ async def start_command(client: Bot, message: Message):
 
         try:
             msgs = await get_messages(client, ids)
-        except:
+        except Exception:
             await wait.delete()
             return await message.reply("❌ File not found or deleted.")
 
@@ -147,9 +154,9 @@ async def start_command(client: Bot, message: Message):
             # -------- CAPTION FIX --------
             if CUSTOM_CAPTION:
                 filename = (
-                    msg.document.file_name if msg.document else
-                    msg.video.file_name if msg.video else
-                    msg.audio.file_name if msg.audio else
+                    msg.document.file_name if getattr(msg, "document", None) else
+                    msg.video.file_name if getattr(msg, "video", None) else
+                    msg.audio.file_name if getattr(msg, "audio", None) else
                     "File"
                 )
                 caption = CUSTOM_CAPTION.format(
@@ -234,6 +241,6 @@ async def stats_cmd(client: Bot, message: Message):
     await message.reply(
         f"📊 **Bot Stats**\n\n"
         f"👥 Users: `{len(await full_userbase())}`\n"
-        f"⏰ Uptime: `{h}h {m}m}`\n"
+        f"⏰ Uptime: `{h}h {m}m`\n"
         f"🤖 Bot: @{client.username}"
     )
