@@ -22,6 +22,7 @@ class Bot(Client):
         await super().start()
         usr_bot_me = await self.get_me()
         self.uptime = datetime.now()
+        self.start_time = datetime.now().timestamp()
         
         if FORCE_SUB_CHANNEL:
             try:
@@ -32,7 +33,7 @@ class Bot(Client):
                 self.invitelink = link
             except Exception as a:
                 self.LOGGER.warning(a)
-                self.LOGGER.warning("Bot Can't Export Invite link from Force Sub Channel!")
+                self.LOGGER.warning("Bot can't export invite link from force sub channel!")
                 self.invitelink = None
         
         try:
@@ -42,11 +43,13 @@ class Bot(Client):
             await test.delete()
         except Exception as e:
             self.LOGGER.warning(e)
-            self.LOGGER.warning(f"Make Sure bot is Admin in DB Channel. Current CHANNEL_ID: {CHANNEL_ID}")
+            self.LOGGER.warning(f"Make sure bot is admin in DB Channel, and double check the CHANNEL_ID value: {CHANNEL_ID}")
+            self.LOGGER.info("Bot Stopped. Join @Madflix_Bots for support")
             exit()
-        
-        self.set_parse_mode(ParseMode.HTML)
-        self.LOGGER.info("Bot Running! Created by @JishuDeveloper")
+
+        self.LOGGER.info(f"Bot Running..!
+
+Created by @JishuDeveloper")
         self.username = usr_bot_me.username
 
     async def stop(self, *args):
