@@ -23,13 +23,15 @@ async def channel_post(client: Bot, message: Message):
     base64_string = await encode(string)
     link = f"https://t.me/{client.username}?start={base64_string}"
     
+    text = (
+        "✅ **Link Generated!**\n\n"
+        f"📎 `{link}`\n\n"
+        f"📊 Msg ID: `{post_message.id}`"
+    )
+    
     await reply_text.edit_text(
-        f"✅ **Link Generated!**
-
-"
-        f"📎 `{link}`
-
-"
-        f"📊 Msg ID: `{post_message.id}`",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔗 Share Link", url=f"https://t.me/share/url?url={link}")]])
+        text,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔗 Share Link", url=f"https://t.me/share/url?url={link}")]
+        ])
     )
