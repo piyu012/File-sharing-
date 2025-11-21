@@ -34,19 +34,20 @@ except ValueError:
 # Ad System
 HMAC_SECRET = os.getenv("HMAC_SECRET", "your_secret_key_here")
 BASE_URL = os.getenv("BASE_URL", "https://your-app.onrender.com")
-BOT_USERNAME = os.getenv("BOT_USERNAME", "YourBotUsername")
-ADRINO_API = os.getenv("ADRINO_API", "")
+ADRINO_API = os.getenv("ADRINO_API", None)
 
-# Custom messages
+# Messages
+START_MSG = os.environ.get("START_MESSAGE", "Hello {first}
+
+I can store files and give you shareable links!")
+
 CUSTOM_CAPTION = os.environ.get("CUSTOM_CAPTION", None)
-PROTECT_CONTENT = True if os.environ.get('PROTECT_CONTENT', "False") == "True" else False
-DISABLE_CHANNEL_BUTTON = os.environ.get("DISABLE_CHANNEL_BUTTON", None) == 'True'
 
-START_MSG = os.environ.get("START_MESSAGE", "Hello {first}! I can store private files and share via special links.")
-FORCE_MSG = os.environ.get("FORCE_SUB_MESSAGE", "Hello {first}! You need to join my channel to use me.")
+# Buttons
+DISABLE_CHANNEL_BUTTON = os.environ.get("DISABLE_CHANNEL_BUTTON", None) == 'True'
+PROTECT_CONTENT = os.environ.get("PROTECT_CONTENT", "False") == 'True'
 
 # Logging
-LOGGER = logging.getLogger(__name__)
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s - %(levelname)s] - %(name)s - %(message)s",
@@ -56,3 +57,6 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+logging.getLogger("pyrogram").setLevel(logging.WARNING)
+
+LOGGER = logging.getLogger(__name__)
