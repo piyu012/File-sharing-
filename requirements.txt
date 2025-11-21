@@ -1,8 +1,8 @@
 pyrogram
 TgCrypto
+pymongo[srv]
 motor
-fastapi
-uvicorn[standard]
-requests
 aiohttp
-python-dotenv
+requests
+fastapi
+uvicorn
