@@ -2,40 +2,62 @@ import hmac
 import hashlib
 import base64
 import time
-from fastapi import APIRouter, Request, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+import logging
+from fastapi import APIRouter, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from config import HMAC_SECRET
-from db_init import activate_token, has_valid_token
+from db_init import activate_token
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 def verify_signature(payload: str, sig: str) -> bool:
     """Verify HMAC signature"""
-    expected_sig = hmac.new(
-        HMAC_SECRET.encode(), 
-        payload.encode(), 
-        hashlib.sha256
-    ).hexdigest()
-    return hmac.compare_digest(expected_sig, sig)
+    try:
+        expected_sig = hmac.new(
+            HMAC_SECRET.encode(), 
+            payload.encode(), 
+            hashlib.sha256
+        ).hexdigest()
+        result = hmac.compare_digest(expected_sig, sig)
+        logger.info(f"Signature verification: {result}")
+        logger.info(f"Expected: {expected_sig}")
+        logger.info(f"Received: {sig}")
+        return result
+    except Exception as e:
+        logger.error(f"Signature verification error: {e}")
+        return False
 
 @router.get("/ad")
-async def show_ad_page(payload: str, sig: str):
+async def show_ad_page(payload: str = None, sig: str = None):
     """Show ad page with verification"""
+    
+    logger.info(f"Ad page request - Payload: {payload}, Sig: {sig}")
+    
+    # Check if parameters are provided
+    if not payload or not sig:
+        return HTMLResponse(
+            content="<h1>❌ Missing parameters!</h1>",
+            status_code=400
+        )
     
     # Verify signature
     if not verify_signature(payload, sig):
         return HTMLResponse(
-            content="<h1>❌ Invalid or tampered link!</h1>",
+            content="<h1>❌ Invalid or tampered link!</h1><p>Please request a new token from the bot.</p>",
             status_code=400
         )
     
     # Decode payload
     try:
         decoded_payload = base64.urlsafe_b64decode(payload.encode()).decode()
+        logger.info(f"Decoded payload: {decoded_payload}")
         uid, timestamp = decoded_payload.split(":")
         uid = int(uid)
         timestamp = int(timestamp)
-    except:
+    except Exception as e:
+        logger.error(f"Payload decode error: {e}")
         return HTMLResponse(
             content="<h1>❌ Invalid payload format!</h1>",
             status_code=400
@@ -45,7 +67,7 @@ async def show_ad_page(payload: str, sig: str):
     current_time = int(time.time())
     if current_time - timestamp > 86400:  # 24 hours
         return HTMLResponse(
-            content="<h1>⏰ Link expired! Please request a new token.</h1>",
+            content="<h1>⏰ Link expired!</h1><p>Please request a new token from the bot.</p>",
             status_code=410
         )
     
@@ -56,7 +78,7 @@ async def show_ad_page(payload: str, sig: str):
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Generate Token</title>
+        <title>Generate Token - File Sharing Bot</title>
         <style>
             * {{
                 margin: 0;
@@ -115,6 +137,7 @@ async def show_ad_page(payload: str, sig: str):
                 cursor: pointer;
                 transition: transform 0.2s, box-shadow 0.2s;
                 margin-top: 20px;
+                width: 100%;
             }}
             .btn:hover {{
                 transform: translateY(-2px);
@@ -131,6 +154,10 @@ async def show_ad_page(payload: str, sig: str):
                 margin-top: 20px;
                 display: none;
             }}
+            .loading {{
+                display: none;
+                margin-top: 20px;
+            }}
         </style>
     </head>
     <body>
@@ -146,12 +173,16 @@ async def show_ad_page(payload: str, sig: str):
             <div class="timer" id="timer">10</div>
             
             <button class="btn" id="activateBtn" disabled>
-                Generating Token...
+                ⏳ Wait 10 seconds...
             </button>
+            
+            <div class="loading" id="loading">
+                <p>⏳ Activating token...</p>
+            </div>
             
             <div class="success" id="successMsg">
                 ✅ Token Activated Successfully!<br>
-                You can now access files.
+                <small>Redirecting to bot...</small>
             </div>
         </div>
 
@@ -160,16 +191,18 @@ async def show_ad_page(payload: str, sig: str):
             const timerElement = document.getElementById('timer');
             const activateBtn = document.getElementById('activateBtn');
             const successMsg = document.getElementById('successMsg');
+            const loadingMsg = document.getElementById('loading');
             
             // Countdown timer
             const countdown = setInterval(() => {{
                 timeLeft--;
                 timerElement.textContent = timeLeft;
+                activateBtn.textContent = `⏳ Wait ${{timeLeft}} seconds...`;
                 
                 if (timeLeft <= 0) {{
                     clearInterval(countdown);
                     activateBtn.disabled = false;
-                    activateBtn.textContent = '🔓 Activate Token';
+                    activateBtn.textContent = '🔓 Activate Token Now';
                     timerElement.textContent = '✓';
                     timerElement.style.color = '#10b981';
                 }}
@@ -177,30 +210,37 @@ async def show_ad_page(payload: str, sig: str):
             
             // Activate token
             activateBtn.addEventListener('click', async () => {{
-                activateBtn.disabled = true;
-                activateBtn.textContent = 'Activating...';
+                activateBtn.style.display = 'none';
+                loadingMsg.style.display = 'block';
                 
                 try {{
                     const response = await fetch('/activate?payload={payload}&sig={sig}');
                     const data = await response.json();
                     
+                    console.log('Activation response:', data);
+                    
                     if (data.success) {{
+                        loadingMsg.style.display = 'none';
                         successMsg.style.display = 'block';
-                        activateBtn.style.display = 'none';
                         
                         // Redirect to Telegram after 2 seconds
                         setTimeout(() => {{
-                            window.location.href = 'https://t.me/freevideosherebot';
+                            window.location.href = 'https://t.me/freevideosherebot?start=verified';
                         }}, 2000);
                     }} else {{
+                        loadingMsg.style.display = 'none';
                         alert('❌ Activation failed: ' + data.message);
+                        activateBtn.style.display = 'block';
+                        activateBtn.textContent = '🔓 Try Again';
                         activateBtn.disabled = false;
-                        activateBtn.textContent = '🔓 Activate Token';
                     }}
                 }} catch (error) {{
-                    alert('❌ Network error! Please try again.');
+                    console.error('Activation error:', error);
+                    loadingMsg.style.display = 'none';
+                    alert('❌ Network error! Please check your connection.');
+                    activateBtn.style.display = 'block';
+                    activateBtn.textContent = '🔓 Try Again';
                     activateBtn.disabled = false;
-                    activateBtn.textContent = '🔓 Activate Token';
                 }}
             }});
         </script>
@@ -211,28 +251,50 @@ async def show_ad_page(payload: str, sig: str):
     return HTMLResponse(content=html_content)
 
 @router.get("/activate")
-async def activate_user_token(payload: str, sig: str):
+async def activate_user_token(payload: str = None, sig: str = None):
     """Activate token after ad verification"""
+    
+    logger.info(f"Activation request - Payload: {payload}, Sig: {sig}")
+    
+    # Check parameters
+    if not payload or not sig:
+        return JSONResponse({
+            "success": False, 
+            "message": "Missing parameters"
+        }, status_code=400)
     
     # Verify signature
     if not verify_signature(payload, sig):
-        return {"success": False, "message": "Invalid signature"}
+        return JSONResponse({
+            "success": False, 
+            "message": "Invalid signature"
+        }, status_code=400)
     
     # Decode payload
     try:
         decoded_payload = base64.urlsafe_b64decode(payload.encode()).decode()
         uid, timestamp = decoded_payload.split(":")
         uid = int(uid)
-    except:
-        return {"success": False, "message": "Invalid payload"}
+        logger.info(f"Activating token for user: {uid}")
+    except Exception as e:
+        logger.error(f"Payload decode error: {e}")
+        return JSONResponse({
+            "success": False, 
+            "message": "Invalid payload"
+        }, status_code=400)
     
     # Activate token in database
     try:
         await activate_token(uid, payload, sig)
-        return {
+        logger.info(f"Token activated successfully for user {uid}")
+        return JSONResponse({
             "success": True, 
             "message": "Token activated successfully!",
             "user_id": uid
-        }
+        })
     except Exception as e:
-        return {"success": False, "message": str(e)}
+        logger.error(f"Token activation error: {e}")
+        return JSONResponse({
+            "success": False, 
+            "message": str(e)
+        }, status_code=500)
