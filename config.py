@@ -31,7 +31,7 @@ try:
 except ValueError:
     raise Exception("Your Admins list does not contain valid integers.")
 
-# Temporary Hardcoded Secret Key
+# Hardcoded Secret
 HMAC_SECRET = "d5e9792fe5f846376b6d373ede48e2c7"
 
 # Ad System
@@ -51,8 +51,8 @@ START_MSG = os.environ.get(
 CUSTOM_CAPTION = os.environ.get("CUSTOM_CAPTION", None)
 
 # Buttons
-DISABLE_CHANNEL_BUTTON = os.environ.get("DISABLE_CHANNEL_BUTTON", "False") == "True"
-PROTECT_CONTENT = os.environ.get("PROTECT_CONTENT", "False") == "True"
+DISABLE_CHANNEL_BUTTON = os.environ.get("DISABLE_CHANNEL_BUTTON", "False") == 'True'
+PROTECT_CONTENT = os.environ.get("PROTECT_CONTENT", "False") == 'True'
 
 # Logging
 logging.basicConfig(
@@ -60,10 +60,10 @@ logging.basicConfig(
     format="[%(asctime)s - %(levelname)s] - %(name)s - %(message)s",
     datefmt='%d-%b-%y %H:%M:%S',
     handlers=[
-        RotatingFileHandler("log.txt", maxBytes=50_000_000, backupCount=10),
+        RotatingFileHandler("log.txt", maxBytes=50000000, backupCount=10),
         logging.StreamHandler()
     ]
 )
-
 logging.getLogger("pyrogram").setLevel(logging.WARNING)
+
 LOGGER = logging.getLogger(__name__)
