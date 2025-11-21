@@ -1,69 +1,35 @@
 import os
-import logging
-from logging.handlers import RotatingFileHandler
+from dotenv import load_dotenv
 
-# Bot credentials
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
-API_ID = int(os.environ.get("API_ID", "0"))
-API_HASH = os.environ.get("API_HASH", "")
-OWNER_ID = int(os.environ.get("OWNER_ID", "0"))
+load_dotenv()
+
+# Bot Configuration
+API_ID = int(os.environ.get("API_ID", "YOUR_API_ID"))
+API_HASH = os.environ.get("API_HASH", "YOUR_API_HASH")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN")
+BOT_USERNAME = os.environ.get("BOT_USERNAME", "your_bot_username")
 
 # Database
-DB_URL = os.environ.get("DB_URL", "")
-DB_NAME = os.environ.get("DB_NAME", "filesharebott")
+DATABASE_URI = os.environ.get("DATABASE_URI", "mongodb+srv://username:password@cluster.mongodb.net/botdb")
+DATABASE_CHANNEL = int(os.environ.get("DATABASE_CHANNEL", "-100123456789"))
 
-# Channels
-CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "0"))
-FORCE_SUB_CHANNEL = int(os.environ.get("FORCE_SUB_CHANNEL", "0"))
+# Admin Settings
+ADMIN_IDS = list(map(int, os.environ.get("ADMIN_IDS", "123456789").split()))
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "@your_admin")
 
-# File settings
-FILE_AUTO_DELETE = int(os.getenv("FILE_AUTO_DELETE", "600"))
+# Force Subscription
+FORCE_SUB_CHANNELS = os.environ.get("FORCE_SUB_CHANNELS", "-1001234567890").split()
 
-# Server
-PORT = os.environ.get("PORT", "8080")
-TG_BOT_WORKERS = int(os.environ.get("TG_BOT_WORKERS", "4"))
+# Link Shortener
+ENABLE_SHORTENER = os.environ.get("ENABLE_SHORTENER", "True").lower() == "true"
+SHORTENER_API_URL = os.environ.get("SHORTENER_API_URL", "https://api.short.io/links")
+SHORTENER_API_KEY = os.environ.get("SHORTENER_API_KEY", "your_shortener_api_key")
 
-# Admins
-try:
-    ADMINS = [OWNER_ID]
-    for x in os.environ.get("ADMINS", str(OWNER_ID)).split():
-        ADMINS.append(int(x))
-except ValueError:
-    raise Exception("Your Admins list does not contain valid integers.")
+# Ads Configuration
+ENABLE_ADS = os.environ.get("ENABLE_ADS", "True").lower() == "true"
+AD_LINK = os.environ.get("AD_LINK", "https://your-ad-link.com")
+AD_WAIT_TIME = int(os.environ.get("AD_WAIT_TIME", "5"))  # seconds
 
-# Hardcoded Secret
-HMAC_SECRET = "d5e9792fe5f846376b6d373ede48e2c7"
-
-# Ad System
-BASE_URL = os.getenv("BASE_URL", "https://file-sharing-yw4r.onrender.com")
-ADRINO_API = os.getenv("ADRINO_API", None)
-
-# Messages
-START_MSG = os.environ.get(
-    "START_MESSAGE",
-    (
-        "Hello {first}!\n\n"
-        "I can store files and give you shareable links.\n"
-        "Send me any file to get started!"
-    )
-)
-
-CUSTOM_CAPTION = os.environ.get("CUSTOM_CAPTION", None)
-
-# Buttons
-DISABLE_CHANNEL_BUTTON = os.environ.get("DISABLE_CHANNEL_BUTTON", "False") == 'True'
-PROTECT_CONTENT = os.environ.get("PROTECT_CONTENT", "False") == 'True'
-
-# Logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(asctime)s - %(levelname)s] - %(name)s - %(message)s",
-    datefmt='%d-%b-%y %H:%M:%S',
-    handlers=[
-        RotatingFileHandler("log.txt", maxBytes=50000000, backupCount=10),
-        logging.StreamHandler()
-    ]
-)
-logging.getLogger("pyrogram").setLevel(logging.WARNING)
-
-LOGGER = logging.getLogger(__name__)
+# Token Settings
+DEFAULT_TOKEN_VALIDITY = 30  # days
+AUTO_DELETE_EXPIRED = True
