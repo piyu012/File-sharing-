@@ -1,6 +1,7 @@
 # File Sharing Bot - Complete Single File Implementation
 # Based on JishuDeveloper's File-Sharing-Bot
 # Combined all modules into single bot.py
+# Added Health Check Server for Render.com deployment
 
 import os
 import sys
@@ -12,6 +13,7 @@ import random
 from typing import Union
 import logging
 import traceback
+from threading import Thread
 
 # Pyrogram imports
 from pyrogram import Client, filters, enums
@@ -36,6 +38,9 @@ from pyrogram.errors.exceptions.bad_request_400 import MessageEmpty
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
 
+# aiohttp for health check server
+from aiohttp import web
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -58,6 +63,9 @@ class Config:
     # Database configuration
     DB_URL = os.environ.get("DB_URL", "")
     DB_NAME = os.environ.get("DB_NAME", "FileSharingBot")
+    
+    # Port for health check server (Render.com requirement)
+    PORT = int(os.environ.get("PORT", "10000"))
     
     # Optional configurations
     PROTECT_CONTENT = os.environ.get("PROTECT_CONTENT", "False").lower() == "true"
@@ -102,6 +110,26 @@ class Config:
     USER_REPLY_TEXT = os.environ.get("USER_REPLY_TEXT", 
         "<b>âŒ Invalid command!\n\nUse /start to start the bot.</b>"
     )
+
+# ============================================
+# HEALTH CHECK SERVER (for Render.com)
+# ============================================
+
+async def health_check(request):
+    """Health check endpoint"""
+    return web.Response(text="Bot is running! âœ…", status=200)
+
+async def start_health_server():
+    """Start health check HTTP server"""
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', Config.PORT)
+    await site.start()
+    logger.info(f"Health check server started on port {Config.PORT}")
 
 # ============================================
 # DATABASE MANAGER
@@ -672,6 +700,18 @@ async def check_sub_callback(client: Client, query: CallbackQuery):
 # MAIN EXECUTION
 # ============================================
 
+async def main():
+    """Main function to run bot and health server"""
+    # Start health check server
+    await start_health_server()
+    
+    # Start the bot
+    await Bot.start()
+    logger.info("Bot started successfully!")
+    
+    # Keep the bot running
+    await asyncio.Event().wait()
+
 if __name__ == "__main__":
     logger.info("Bot starting...")
     
@@ -692,5 +732,9 @@ if __name__ == "__main__":
         logger.error("DB_URL not found!")
         sys.exit(1)
     
-    logger.info("Starting bot...")
-    Bot.run()
+    # Run the bot
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        logger.info("Bot stopped!")
