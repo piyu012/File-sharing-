@@ -7,8 +7,7 @@ import logging
 from typing import Union
 
 from pyrogram import Client, filters, enums
-from pyrogram.types import Message, CallbackQuery
-from pyrogram.errors import UserNotParticipant
+from pyrogram.types import Message
 from motor.motor_asyncio import AsyncIOMotorClient
 import base64
 from aiohttp import web
@@ -19,7 +18,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ---------------- CONFIG ----------------
 class Config:
     API_HASH = os.environ.get("API_HASH", "")
     APP_ID = int(os.environ.get("APP_ID", "0"))
@@ -29,41 +27,11 @@ class Config:
     
     DB_URL = os.environ.get("DB_URL", "")
     DB_NAME = os.environ.get("DB_NAME", "FileSharingBot")
-    
     PORT = int(os.environ.get("PORT", "10000"))
     PROTECT_CONTENT = os.environ.get("PROTECT_CONTENT", "False").lower() == "true"
     FILE_AUTO_DELETE = int(os.environ.get("FILE_AUTO_DELETE", "600"))
-    
-    START_MESSAGE = os.environ.get("START_MESSAGE", "<b>Hi {mention}! Welcome to the File Sharing Bot.</b>")
-    CUSTOM_CAPTION = os.environ.get("CUSTOM_CAPTION", "")
 
-# ---------------- DATABASE ----------------
-class Database:
-    def __init__(self, uri, database_name):
-        self._client = AsyncIOMotorClient(uri)
-        self.db = self._client[database_name]
-        self.users = self.db['users']
-        self.files = self.db['file_ids']
-
-    async def add_user(self, user_id, first_name, username):
-        try:
-            user_data = {
-                'id': user_id,
-                'first_name': first_name,
-                'username': username,
-                'join_date': datetime.datetime.now()
-            }
-            await self.users.update_one({'id': user_id}, {'$set': user_data}, upsert=True)
-        except Exception as e:
-            logger.error(f"Error adding user: {e}")
-
-    async def add_file(self, file_id, unique_id, caption=None):
-        try:
-            await self.files.insert_one({'file_id': file_id, 'unique_id': unique_id, 'caption': caption})
-        except Exception as e:
-            logger.error(f"Error adding file: {e}")
-
-# ---------------- UTILS ----------------
+# --------- Utility Functions ---------
 def get_file_type(message: Message) -> str:
     if message.document: return "document"
     if message.video: return "video"
@@ -71,6 +39,7 @@ def get_file_type(message: Message) -> str:
     if message.photo: return "photo"
     if message.voice: return "voice"
     if message.video_note: return "video_note"
+    if message.sticker: return "sticker"
     if message.animation: return "animation"
     return "unknown"
 
@@ -82,6 +51,7 @@ async def get_file_id_and_ref(message: Message) -> tuple:
     if ftype == "photo": return message.photo.file_id, message.photo.file_unique_id
     if ftype == "voice": return message.voice.file_id, message.voice.file_unique_id
     if ftype == "video_note": return message.video_note.file_id, message.video_note.file_unique_id
+    if ftype == "sticker": return message.sticker.file_id, message.sticker.file_unique_id
     if ftype == "animation": return message.animation.file_id, message.animation.file_unique_id
     return None, None
 
@@ -94,12 +64,33 @@ def decode_file_id(encoded_id: str) -> str:
         encoded_id += "=" * padding
     return base64.urlsafe_b64decode(encoded_id.encode()).decode()
 
-# ---------------- BOT SETUP ----------------
+# --------- Database ---------
+class Database:
+    def __init__(self, uri, database_name):
+        self._client = AsyncIOMotorClient(uri)
+        self.db = self._client[database_name]
+        self.users = self.db['users']
+        self.files = self.db['file_ids']
+
+    async def add_user(self, user_id, first_name, username):
+        try:
+            user_data = {'id': user_id, 'first_name': first_name, 'username': username, 'join_date': datetime.datetime.now()}
+            await self.users.update_one({'id': user_id}, {'$set': user_data}, upsert=True)
+        except Exception as e:
+            logger.error(f"Error adding user: {e}")
+
+    async def add_file(self, file_id, unique_id, caption=None):
+        try:
+            await self.files.insert_one({'file_id': file_id, 'unique_id': unique_id, 'caption': caption})
+        except Exception as e:
+            logger.error(f"Error adding file: {e}")
+
+# --------- Bot Setup ---------
 Bot = Client("FileShareBot", api_id=Config.APP_ID, api_hash=Config.API_HASH, bot_token=Config.BOT_TOKEN, workers=50, sleep_threshold=10)
 db = Database(Config.DB_URL, Config.DB_NAME)
 
-# ---------------- HEALTH SERVER ----------------
-async def health_check(request):
+# --------- Health Server ---------
+async def health_check(request): 
     return web.Response(text="Bot is running! ✅", status=200)
 
 async def start_health_server():
@@ -112,72 +103,59 @@ async def start_health_server():
     await site.start()
     logger.info(f"Health server running on port {Config.PORT}")
 
-# ---------------- SEND FILE ----------------
-async def send_file(client: Client, user, encoded_file_id: str):
+# --------- Send File Function ---------
+async def send_file(client, user, encoded_file_id):
     try:
-        decoded_id = int(decode_file_id(encoded_file_id))
-        msg = await client.get_messages(Config.CHANNEL_ID, decoded_id)
+        file_id = decode_file_id(encoded_file_id)
+        msg = await client.get_messages(Config.CHANNEL_ID, int(file_id))
         if not msg:
-            await client.send_message(user.id, "❌ File not found in channel.")
+            await client.send_message(user.id, "❌ File not found.", quote=True)
             return
-
-        ftype = get_file_type(msg)
-        if ftype in ["document", "video", "audio", "photo", "voice", "animation"]:
-            caption = msg.caption or ""
-            if Config.CUSTOM_CAPTION and msg.document:
-                caption = Config.CUSTOM_CAPTION.format(filename=msg.document.file_name, previouscaption=msg.caption or "")
-            await msg.copy(chat_id=user.id, caption=caption, protect_content=Config.PROTECT_CONTENT)
-        else:
-            await client.send_message(user.id, "❌ Unsupported file type.")
+        await msg.copy(chat_id=user.id, caption=msg.caption, protect_content=Config.PROTECT_CONTENT)
     except Exception as e:
-        await client.send_message(user.id, f"❌ Error sending file: {e}")
+        logger.error(f"Error sending file: {e}")
+        await client.send_message(user.id, f"❌ Error: {e}", quote=True)
 
-# ---------------- OWNER AUTO LINK ----------------
-@Bot.on_message(filters.private & filters.user(Config.OWNER_ID))
-async def owner_auto_link(client: Client, message: Message):
+# --------- Owner Upload Only ---------
+@Bot.on_message(filters.private)
+async def handle_upload(client: Client, message: Message):
     ftype = get_file_type(message)
     if ftype == "unknown": return
 
-    try:
-        # Forward file to channel
-        sent_msg = await message.copy(chat_id=Config.CHANNEL_ID)
-        file_id, unique_id = await get_file_id_and_ref(sent_msg)
-        await db.add_file(file_id, unique_id, sent_msg.caption)
+    # Agar owner hai, upload allow
+    if message.from_user.id == Config.OWNER_ID:
+        try:
+            sent_msg = await message.copy(chat_id=Config.CHANNEL_ID)
+            file_id, unique_id = await get_file_id_and_ref(sent_msg)
+            await db.add_file(file_id, unique_id, sent_msg.caption)
+            encoded = encode_file_id(str(sent_msg.id))
+            bot_username = (await client.get_me()).username
+            share_link = f"https://t.me/{bot_username}?start={encoded}"
+            await message.reply_text(
+                f"✅ File uploaded successfully!\n📄 Message ID: `{sent_msg.id}`\n🔗 Share Link:\n`{share_link}`",
+                quote=True
+            )
+        except Exception as e:
+            await message.reply_text(f"❌ Error: {e}", quote=True)
+    else:
+        # Agar koi user file bheje → deny
+        await message.reply_text("❌ This is a file sharing bot. Please do not send files.", quote=True)
 
-        # Generate link
-        encoded = encode_file_id(str(sent_msg.id))
-        bot_username = (await client.get_me()).username
-        share_link = f"https://t.me/{bot_username}?start={encoded}"
-
-        # Reply to owner
-        await message.reply_text(
-            f"✅ File uploaded successfully!\n📄 Message ID: `{sent_msg.id}`\n🔗 Share Link:\n`{share_link}`",
-            quote=True
-        )
-    except Exception as e:
-        logger.error(f"Error in owner_auto_link: {e}")
-        await message.reply_text(f"❌ Error: {e}", quote=True)
-
-# ---------------- START COMMAND ----------------
+# --------- Start Command (Link Click) ---------
 @Bot.on_message(filters.command("start") & filters.private)
 async def start_command(client: Client, message: Message):
     await db.add_user(message.from_user.id, message.from_user.first_name, message.from_user.username)
-
     if len(message.command) > 1:
         encoded_file_id = message.command[1]
-        class DummyUser:
-            def __init__(self, user):
-                self.id = user.id
-        await send_file(client, DummyUser(message.from_user), encoded_file_id)
+        await send_file(client, message.from_user, encoded_file_id)
     else:
-        text = Config.START_MESSAGE.format(mention=message.from_user.mention)
-        await message.reply_text(text, quote=True)
+        await message.reply_text(f"Hi {message.from_user.mention}! Welcome to the bot.", quote=True)
 
-# ---------------- MAIN ----------------
+# --------- Run Bot ---------
 async def main():
     await start_health_server()
     await Bot.start()
-    logger.info("Bot started! Owner auto link and user download enabled.")
+    logger.info("Bot started! Owner-only upload, user download enabled.")
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
