@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from motor.motor_asyncio import AsyncIOMotorClient
 from pyrogram import Client, filters
 from pyrogram.types import Message
+from pyrogram import idle
 
 # ---------------- ENV ----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -27,7 +28,7 @@ bot = Client(
 )
 
 # ============================================================
-# SAVE FILES + GENERATE DIRECT LINK
+# SAVE FILES + GENERATE LINK
 # ============================================================
 @bot.on_message(filters.private & (filters.video | filters.document | filters.audio))
 async def save_file_handler(client: Client, msg: Message):
@@ -35,7 +36,6 @@ async def save_file_handler(client: Client, msg: Message):
     file_id = file.file_id
     unique_id = file.file_unique_id
 
-    # Save in DB
     await files_col.update_one(
         {"file_uid": unique_id},
         {"$set": {
@@ -48,9 +48,8 @@ async def save_file_handler(client: Client, msg: Message):
     direct_link = f"https://{os.getenv('RENDER_EXTERNAL_URL', 'localhost')}?id={unique_id}"
     await msg.reply(f"**Your File Link:**\n{direct_link}")
 
-
 # ============================================================
-# HTTP SERVER FOR DIRECT DOWNLOAD
+# HTTP SERVER
 # ============================================================
 async def serve_file(request):
     file_uid = request.query.get("id")
@@ -62,8 +61,6 @@ async def serve_file(request):
         return web.Response(text="File not found", status=404)
 
     file_id = data["file_id"]
-
-    # Forward file back to user instantly
     return web.Response(text=f"Use this file_id in Telegram: {file_id}", status=200)
 
 
@@ -77,34 +74,29 @@ async def start_http_server():
     await site.start()
     print(f"HTTP Server Running on port {PORT}")
 
-
 # ============================================================
-# CLEANUP OLD FILES FROM DB
+# CLEANUP TASK
 # ============================================================
 async def cleanup_task():
     while True:
         limit = datetime.utcnow() - timedelta(days=3)
         await files_col.delete_many({"added": {"$lt": limit}})
-        await asyncio.sleep(3600)  # every 1 hour
-
+        await asyncio.sleep(3600)
 
 # ============================================================
-# MAIN RUNNER
+# MAIN
 # ============================================================
-async def main_runner():
+async def main():
+    print("Starting HTTP and Cleanup tasks...")
     asyncio.create_task(start_http_server())
     asyncio.create_task(cleanup_task())
+
     print("Bot fully started!")
     await bot.start()
     await idle()
-
 
 # ============================================================
 # BOOT
 # ============================================================
 if __name__ == "__main__":
-    from pyrogram import idle
-    try:
-        bot.run(main_runner())
-    except Exception as e:
-        print("ERROR WHILE RUNNING BOT:", e)
+    asyncio.run(main())
