@@ -10,6 +10,7 @@ import time
 import string
 import base64
 import logging
+import re
 from typing import Union, Optional, AsyncGenerator
 from aiohttp import web
 
@@ -251,7 +252,7 @@ async def start_health_server():
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', Config.PORT)
     await site.start()
-    LOGGER.info(f"Health check server started on port {Config.PORT}")
+    LOGGER.info(f"âœ… Health check server started on port {Config.PORT}")
 
 
 # ===========================================
@@ -650,42 +651,41 @@ async def not_valid(client: Client, message: Message):
 
 
 # ===========================================
-# Main Function
+# Main Function - FIXED
 # ===========================================
 
 async def main():
-    # Set db_channel attribute
+    # Start bot first
+    await Bot.start()
+    LOGGER.info("âœ… Bot Started!")
+    
+    # Now get db_channel (Bot is already started)
     Bot.db_channel = await Bot.get_chat(Config.CHANNEL_ID)
+    LOGGER.info(f"âœ… Database Channel: {Bot.db_channel.title}")
     
     # Start health check server
     await start_health_server()
-    
-    # Start bot
-    await Bot.start()
-    LOGGER.info("Bot Started!")
     
     # Keep running
     await asyncio.Event().wait()
 
 
 if __name__ == "__main__":
-    import re
-    
     # Validation
     if not Config.BOT_TOKEN:
-        LOGGER.error("BOT_TOKEN not found!")
+        LOGGER.error("âŒ BOT_TOKEN not found!")
         sys.exit(1)
     
     if not Config.API_HASH or Config.API_ID == 0:
-        LOGGER.error("API_HASH or API_ID not found!")
+        LOGGER.error("âŒ API_HASH or API_ID not found!")
         sys.exit(1)
     
     if Config.CHANNEL_ID == 0:
-        LOGGER.error("CHANNEL_ID not found!")
+        LOGGER.error("âŒ CHANNEL_ID not found!")
         sys.exit(1)
     
     if not Config.DB_URL:
-        LOGGER.error("DB_URL not found!")
+        LOGGER.error("âŒ DB_URL not found!")
         sys.exit(1)
     
     # Run bot
