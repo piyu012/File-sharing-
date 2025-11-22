@@ -145,25 +145,26 @@ async def save_video(file_id: str, user_id: int, file_name: str):
 
 
 async def shorten_url(long_url: str):
-    """Shorten URL using AdrinoLinks API"""
+    """Shorten URL using AdrinoLinks API (adrinolinks.in)"""
     if not ADRINOLINKS_API_KEY:
         logger.warning("ADRINOLINKS_API_KEY not set, returning original URL")
         return long_url
     
     try:
-        api_url = f"https://adrinolinks.com/api?api={ADRINOLINKS_API_KEY}&url={long_url}"
+        import urllib.parse
+        encoded_url = urllib.parse.quote(long_url, safe='')
+        api_url = f"https://adrinolinks.in/api?api={ADRINOLINKS_API_KEY}&url={encoded_url}&format=text"
         response = requests.get(api_url, timeout=10)
         
         logger.info(f"AdrinoLinks API response status: {response.status_code}")
-        logger.info(f"AdrinoLinks API response: {response.text[:200]}")
         
         if response.status_code == 200:
-            try:
-                data = response.json()
-                if data.get('status') == 'success' and data.get('shortenedUrl'):
-                    return data.get('shortenedUrl')
-            except ValueError:
-                logger.error("AdrinoLinks returned invalid JSON")
+            shortened_url = response.text.strip()
+            if shortened_url and shortened_url.startswith('http'):
+                logger.info(f"URL shortened successfully: {shortened_url}")
+                return shortened_url
+            else:
+                logger.error(f"Invalid shortened URL: {shortened_url}")
         
         return long_url
     except Exception as e:
