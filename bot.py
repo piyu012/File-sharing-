@@ -118,7 +118,7 @@ async def generate_ad_link(user_id: int) -> str:
         async with httpx.AsyncClient(timeout=15) as client:
             params = {
                 "apikey": Config.ADRINOLINKS_API_KEY,
-                "url": f"https://yourdomain.com/ad_complete?user={user_id}"  # webhook returns token
+                "url": f"https://file-sharing-yw4r.onrender.com/ad_complete?user={user_id}"  # webhook returns token
             }
             resp = await client.get(Config.ADRINOLINKS_BASE, params=params)
             data = resp.json()
