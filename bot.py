@@ -4,6 +4,7 @@ import motor.motor_asyncio
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from pyrogram import Client, filters
+from pyrogram.types import Message
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 API_ID = int(os.getenv("API_ID"))
