@@ -190,25 +190,29 @@ async def start_command(client: Client, message: Message):
                 "Ab aap bot use kar sakte ho!\n"
                 "Use /upload to upload videos."
             )
-            return
-        
-        # Handle video access from shared link
+            return            # Handle video access from shared link
         try:
             import base64
+            logger.info(f"🔍 Deeplink parameter received: {param}")
+            
             # Add padding for proper base64 decoding
             missing_padding = len(param) % 4
             if missing_padding:
                 param += '=' * (4 - missing_padding)
+                logger.info(f"✅ Added {4 - missing_padding} padding characters")
             
             decoded = base64.b64decode(param).decode('utf-8')
-            logger.info(f"Decoded parameter: {decoded}")
+            logger.info(f"✅ Decoded parameter: {decoded}")
             
             if decoded.startswith('get-'):
                 file_id = decoded.replace('get-', '')
-                logger.info(f"Looking for video with file_id: {file_id}")
+                logger.info(f"🔍 Looking for video with file_id: {file_id}")
                 
                 # Check if user has valid token
-                if not await is_token_valid(user_id):
+                token_valid = await is_token_valid(user_id)
+                logger.info(f"🎟️ Token valid for user {user_id}: {token_valid}")
+                
+                if not token_valid:
                     # Create ad link for token activation
                     bot_username = (await client.get_me()).username
                     token_verify_link = f"https://t.me/{bot_username}?start=verify_{user_id}"
@@ -218,6 +222,8 @@ async def start_command(client: Client, message: Message):
                         [InlineKeyboardButton("📺 View Ad to Activate Token", url=ad_link)]
                     ])
                     
+                    logger.info(f"❌ Token required - showing ad link to user {user_id}")
+                    
                     await message.reply_text(
                         "🎟️ **Token Required!**\n\n"
                         "Video dekhne ke liye pehle ad dekhein aur token activate karein.",
@@ -226,24 +232,34 @@ async def start_command(client: Client, message: Message):
                     return
                 
                 video = videos_collection.find_one({"file_id": file_id})
+                logger.info(f"📊 Database query result: {'Found' if video else 'Not Found'}")
+                
                 if video:
+                    logger.info(f"✅ Video found in database - sending to user {user_id}")
                     await message.reply_text("📥 Fetching your video...")
                     try:
+                        logger.info(f"📤 Attempting to send video with file_id: {file_id}")
                         await client.send_video(
                             user_id,
                             file_id,
                             caption="🎬 Here's your video!"
                         )
+                        logger.info(f"✅ Video sent successfully to user {user_id}")
                     except Exception as send_error:
-                        logger.error(f"Video send error: {send_error}")
+                        logger.error(f"❌ Video send error: {send_error}")
+                        logger.error(f"❌ Error type: {type(send_error).__name__}")
                         await message.reply_text("❌ Video send karne mein error! File ID invalid ho sakti hai.")
                     return
                 else:
-                    logger.warning(f"Video not found in database for file_id: {file_id}")
+                    logger.warning(f"❌ Video not found in database for file_id: {file_id}")
+                    logger.warning(f"📊 Total videos in database: {videos_collection.count_documents({})}")
                     await message.reply_text("❌ Video not found in database!")
                     return
         except Exception as e:
-            logger.error(f"Deeplink decode error: {e}")
+            logger.error(f"❌ Deeplink decode error: {e}")
+            logger.error(f"❌ Error type: {type(e).__name__}")
+            import traceback
+            logger.error(f"❌ Full traceback:\n{traceback.format_exc()}")
             await message.reply_text(f"❌ Link decode error: {str(e)}\n\nUse /start for help.")
             return
     
