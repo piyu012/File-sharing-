@@ -381,12 +381,20 @@ async def handle_video(client: Client, message: Message):
     processing_msg = await message.reply_text("⏳ Processing video...")
     
     try:
-        # Forward to storage channel if configured
-        if STORAGE_CHANNEL_ID:
-            stored_msg = await message.forward(STORAGE_CHANNEL_ID)
-            file_id = stored_msg.video.file_id
+        # Forward to storage channel if configured and valid
+        if STORAGE_CHANNEL_ID and STORAGE_CHANNEL_ID != 0:
+            try:
+                stored_msg = await message.forward(STORAGE_CHANNEL_ID)
+                file_id = stored_msg.video.file_id
+                logger.info(f"Video forwarded to storage channel: {file_id}")
+            except Exception as forward_error:
+                logger.error(f"Storage channel forward failed: {forward_error}")
+                # Fallback to direct file_id if forwarding fails
+                file_id = message.video.file_id
+                logger.info("Using direct file_id instead")
         else:
             file_id = message.video.file_id
+            logger.info("No storage channel configured, using direct file_id")
         
         # Save to database
         await save_video(
@@ -431,7 +439,10 @@ async def handle_video(client: Client, message: Message):
         
     except Exception as e:
         logger.error(f"Error processing video: {e}")
-        await processing_msg.edit_text("❌ Error uploading video. Try again.")
+        try:
+            await processing_msg.edit_text("❌ Error uploading video. Try again.")
+        except:
+            pass  # Ignore if message edit fails
 
 
 @app.on_message(filters.command("stats") & filters.private)
