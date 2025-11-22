@@ -5,9 +5,10 @@ import asyncio
 import datetime
 import logging
 from typing import Union
+import httpx
 
 from pyrogram import Client, filters, enums
-from pyrogram.types import Message, CallbackQuery
+from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import UserNotParticipant
 from motor.motor_asyncio import AsyncIOMotorClient
 import base64
@@ -36,6 +37,10 @@ class Config:
     
     START_MESSAGE = os.environ.get("START_MESSAGE", "<b>Hi {mention}! Welcome to the File Sharing Bot.</b>")
     CUSTOM_CAPTION = os.environ.get("CUSTOM_CAPTION", "")
+    
+    TOKEN_VALID_HOURS = int(os.environ.get("TOKEN_VALID_HOURS", "12"))
+    ADRINOLINKS_API_KEY = os.environ.get("ADRINOLINKS_API_KEY", "")
+    ADRINOLINKS_BASE = "https://adrinolinks.in/api"
 
 # ---------------- DATABASE ----------------
 class Database:
@@ -51,7 +56,7 @@ class Database:
                 'id': user_id,
                 'first_name': first_name,
                 'username': username,
-                'join_date': datetime.datetime.now()
+                'join_date': datetime.datetime.utcnow()
             }
             await self.users.update_one({'id': user_id}, {'$set': user_data}, upsert=True)
         except Exception as e:
@@ -62,6 +67,17 @@ class Database:
             await self.files.insert_one({'file_id': file_id, 'unique_id': unique_id, 'caption': caption})
         except Exception as e:
             logger.error(f"Error adding file: {e}")
+
+    async def set_token(self, user_id, hours=Config.TOKEN_VALID_HOURS):
+        expiry = datetime.datetime.utcnow() + datetime.timedelta(hours=hours)
+        await self.users.update_one({'id': user_id}, {'$set': {'token_expiry': expiry}}, upsert=True)
+        return expiry
+
+    async def is_token_valid(self, user_id):
+        user = await self.users.find_one({'id': user_id})
+        if not user or 'token_expiry' not in user:
+            return False
+        return datetime.datetime.utcnow() < user['token_expiry']
 
 # ---------------- UTILS ----------------
 def get_file_type(message: Message) -> str:
@@ -94,6 +110,25 @@ def decode_file_id(encoded_id: str) -> str:
         encoded_id += "=" * padding
     return base64.urlsafe_b64decode(encoded_id.encode()).decode()
 
+async def generate_ad_link(user_id: int) -> str:
+    """
+    Generate a short ad link using Adrinolinks API
+    """
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            params = {
+                "apikey": Config.ADRINOLINKS_API_KEY,
+                "url": f"https://yourdomain.com/ad_complete?user={user_id}"  # webhook returns token
+            }
+            resp = await client.get(Config.ADRINOLINKS_BASE, params=params)
+            data = resp.json()
+            if "shortened" in data:
+                return data["shortened"]
+            return f"https://yourdomain.com/ad_complete?user={user_id}"
+    except Exception as e:
+        logger.error(f"Ad link generation error: {e}")
+        return f"https://yourdomain.com/ad_complete?user={user_id}"
+
 # ---------------- BOT SETUP ----------------
 Bot = Client("FileShareBot", api_id=Config.APP_ID, api_hash=Config.API_HASH, bot_token=Config.BOT_TOKEN, workers=50, sleep_threshold=10)
 db = Database(Config.DB_URL, Config.DB_NAME)
@@ -106,6 +141,18 @@ async def start_health_server():
     app = web.Application()
     app.router.add_get('/', health_check)
     app.router.add_get('/health', health_check)
+
+    # Token activation webhook
+    async def ad_complete(request):
+        try:
+            user_id = int(request.query.get("user"))
+            await db.set_token(user_id)
+            return web.Response(text="✅ Token activated! Return to Telegram.", status=200)
+        except Exception as e:
+            return web.Response(text=f"❌ Error: {e}", status=500)
+
+    app.router.add_get('/ad_complete', ad_complete)
+
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', Config.PORT)
@@ -139,17 +186,14 @@ async def owner_auto_link(client: Client, message: Message):
     if ftype == "unknown": return
 
     try:
-        # Forward file to channel
         sent_msg = await message.copy(chat_id=Config.CHANNEL_ID)
         file_id, unique_id = await get_file_id_and_ref(sent_msg)
         await db.add_file(file_id, unique_id, sent_msg.caption)
 
-        # Generate link
         encoded = encode_file_id(str(sent_msg.id))
         bot_username = (await client.get_me()).username
         share_link = f"https://t.me/{bot_username}?start={encoded}"
 
-        # Reply to owner
         await message.reply_text(
             f"✅ File uploaded successfully!\n📄 Message ID: `{sent_msg.id}`\n🔗 Share Link:\n`{share_link}`",
             quote=True
@@ -163,26 +207,38 @@ async def owner_auto_link(client: Client, message: Message):
 async def start_command(client: Client, message: Message):
     await db.add_user(message.from_user.id, message.from_user.first_name, message.from_user.username)
 
+    # Owner bypass token
+    if message.from_user.id == Config.OWNER_ID:
+        await message.reply_text(f"Hi {message.from_user.mention}! You are the owner. Upload enabled.", quote=True)
+        return
+
+    # Token check
+    valid = await db.is_token_valid(message.from_user.id)
+    if not valid:
+        ad_url = await generate_ad_link(message.from_user.id)
+        keyboard = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Renew Token", url=ad_url)]]
+        )
+        await message.reply_text("❌ Your token is expired. Please renew your token.", reply_markup=keyboard, quote=True)
+        return
+
     if len(message.command) > 1:
         encoded_file_id = message.command[1]
-        class DummyUser:
-            def __init__(self, user):
-                self.id = user.id
-        await send_file(client, DummyUser(message.from_user), encoded_file_id)
+        await send_file(client, message.from_user, encoded_file_id)
     else:
         text = Config.START_MESSAGE.format(mention=message.from_user.mention)
-        await message.reply_text(text, quote=True)
+        await message.reply_text(f"✅ Your token is valid for {Config.TOKEN_VALID_HOURS} hours.\n{text}", quote=True)
 
 # ---------------- MAIN ----------------
 async def main():
     await start_health_server()
     await Bot.start()
-    logger.info("Bot started! Owner auto link and user download enabled.")
+    logger.info("Bot started! Owner upload + user download + token system + adrinolinks enabled.")
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    if not Config.BOT_TOKEN or not Config.API_HASH or Config.APP_ID==0 or Config.CHANNEL_ID==0 or not Config.DB_URL:
-        logger.error("Please set all required environment variables!")
+    if not Config.BOT_TOKEN or not Config.API_HASH or Config.APP_ID==0 or Config.CHANNEL_ID==0 or not Config.DB_URL or not Config.ADRINOLINKS_API_KEY:
+        logger.error("Please set all required environment variables including ADRINOLINKS_API_KEY!")
         sys.exit(1)
     loop = asyncio.get_event_loop()
     try: loop.run_until_complete(main())
