@@ -546,43 +546,41 @@ async def save_file(client: Client, message: Message):
             bot_username = (await client.get_me()).username
             share_link = f"https://t.me/{bot_username}?start={encoded}"
 
+            # File info
             file_name = "File"
             file_size = ""
-
             if message.document:
                 file_name = message.document.file_name or "Document"
-                file_size = f"\nðŸ“¦ Size: {message.document.file_size / (1024*1024):.2f} MB"
+                file_size = f"\n📌 Size: {message.document.file_size / (1024*1024):.2f} MB"
             elif message.video:
                 file_name = message.video.file_name or "Video"
-                file_size = f"\nðŸ“¦ Size: {message.video.file_size / (1024*1024):.2f} MB"
+                file_size = f"\n📌 Size: {message.video.file_size / (1024*1024):.2f} MB"
             elif message.audio:
                 file_name = message.audio.file_name or message.audio.title or "Audio"
-                file_size = f"\nðŸ“¦ Size: {message.audio.file_size / (1024*1024):.2f} MB"
+                file_size = f"\n📌 Size: {message.audio.file_size / (1024*1024):.2f} MB"
             elif message.photo:
                 file_name = "Photo"
-                file_size = f"\nðŸ“¦ Size: {message.photo.file_size / (1024*1024):.2f} MB"
+                file_size = f"\n📌 Size: {message.photo.file_size / (1024*1024):.2f} MB"
 
             link_message = (
-                f"âœ… **Link Generated!**\n\n"
-                f"ðŸ“„ File: `{file_name}`{file_size}\n"
-                f"ðŸ†” Message ID: `{msg_id}`\n\n"
-                f"ðŸ”— **Share Link:**\n`{share_link}`"
+                f"✅ **Link Generated Automatically!**\n\n"
+                f"📄 File: `{file_name}`{file_size}\n"
+                f"➡ Message ID: `{msg_id}`\n\n"
+                f"🔗 **Share Link:**\n`{share_link}`"
             )
 
-            await message.reply_text(
-                link_message,
-                quote=True,
-                disable_web_page_preview=True
-            )
-
+            # Send link to owner automatically
             try:
                 await client.send_message(
                     Config.OWNER_ID,
-                    f"ðŸ”” **New File Added!**\n\n{link_message}",
+                    link_message,
                     disable_web_page_preview=True
                 )
             except Exception as e:
-                logger.error(f"Could not send notification to owner: {e}")
+                logger.error(f"Could not send link to owner: {e}")
+
+            # Optional: reply in channel with link (if you want public feedback)
+            # await message.reply_text(link_message, disable_web_page_preview=True)
 
     except Exception as e:
         logger.error(f"Error saving file: {e}")
