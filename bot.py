@@ -173,22 +173,30 @@ async def start_command(client: Client, message: Message):
             return
         
         # Handle video access from shared link
-        if param.startswith('Z') or len(param) > 10:
-            try:
-                import base64
-                decoded = base64.b64decode(param).decode()
-                if decoded.startswith('get-'):
-                    file_id = decoded.replace('get-', '')
-                    video = videos_collection.find_one({"file_id": file_id})
-                    if video:
-                        await client.send_video(
-                            user_id,
-                            file_id,
-                            caption="🎬 Here's your video!"
-                        )
-                        return
-            except:
-                pass
+        try:
+            import base64
+            # Add padding if needed for base64 decoding
+            padded_param = param + '=='
+            decoded = base64.b64decode(padded_param).decode('utf-8')
+            
+            if decoded.startswith('get-'):
+                file_id = decoded.replace('get-', '')
+                video = videos_collection.find_one({"file_id": file_id})
+                if video:
+                    await message.reply_text("📥 Fetching your video...")
+                    await client.send_video(
+                        user_id,
+                        file_id,
+                        caption="🎬 Here's your video!\n\n📤 Share karne ke liye /upload use karein"
+                    )
+                    return
+                else:
+                    await message.reply_text("❌ Video not found!")
+                    return
+        except Exception as e:
+            logger.error(f"Deeplink decode error: {e}")
+            await message.reply_text("❌ Invalid link! Use /start for help.")
+            return
     
     # Create user if doesn't exist
     user = await get_user(user_id)
