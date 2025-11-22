@@ -37,7 +37,7 @@ class Config:
 
     TOKEN_VALID_HOURS = int(os.environ.get("TOKEN_VALID_HOURS", "12"))
     ADRINOLINKS_API_KEY = os.environ.get("ADRINOLINKS_API_KEY", "")
-    ADRINOLINKS_SECRET = os.environ.get("ADRINOLINKS_SECRET", "")  # secret for verification
+    ADRINOLINKS_SECRET = os.environ.get("ADRINOLINKS_SECRET", "")
     ADRINOLINKS_BASE = "https://adrinolinks.in/api"
 
 # ---------------- DATABASE ----------------
@@ -78,7 +78,7 @@ def decode_file_id(encoded_id: str) -> str:
     return base64.urlsafe_b64decode(encoded_id.encode()).decode()
 
 async def generate_ad_link(user_id: int) -> str:
-    """Generate adrinolinks short link with verification"""
+    """Generate adrinolinks short link with secret verification"""
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             params = {
