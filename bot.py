@@ -1,6 +1,7 @@
 # bot.py (fixed)
 import os
 import asyncio
+from helper_func.py import base64
 from datetime import datetime, timedelta
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
