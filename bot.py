@@ -1,19 +1,17 @@
 import os
 import sys
-import time
 import asyncio
 import datetime
 import logging
-from typing import Union
+import base64
 import httpx
 
-from pyrogram import Client, filters, enums
-from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram.errors import UserNotParticipant
+from pyrogram import Client, filters
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from motor.motor_asyncio import AsyncIOMotorClient
-import base64
 from aiohttp import web
 
+# ---------------- LOGGING ----------------
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -110,6 +108,7 @@ def decode_file_id(encoded_id: str) -> str:
         encoded_id += "=" * padding
     return base64.urlsafe_b64decode(encoded_id.encode()).decode()
 
+# ---------------- ADRINOLINKS SHORT LINK ----------------
 async def generate_ad_link(user_id: int) -> str:
     """
     Generate a short ad link using Adrinolinks API
@@ -118,19 +117,24 @@ async def generate_ad_link(user_id: int) -> str:
         async with httpx.AsyncClient(timeout=15) as client:
             params = {
                 "apikey": Config.ADRINOLINKS_API_KEY,
-                "url": f"https://file-sharing-yw4r.onrender.com/ad_complete?user={user_id}"  # webhook returns token
+                "url": f"https://file-sharing-yw4r.onrender.com/ad_complete?user={user_id}"
             }
             resp = await client.get(Config.ADRINOLINKS_BASE, params=params)
             data = resp.json()
             if "shortened" in data:
                 return data["shortened"]
-            return f"https://yourdomain.com/ad_complete?user={user_id}"
+            return f"https://file-sharing-yw4r.onrender.com/ad_complete?user={user_id}"
     except Exception as e:
         logger.error(f"Ad link generation error: {e}")
-        return f"https://yourdomain.com/ad_complete?user={user_id}"
+        return f"https://file-sharing-yw4r.onrender.com/ad_complete?user={user_id}"
 
 # ---------------- BOT SETUP ----------------
-Bot = Client("FileShareBot", api_id=Config.APP_ID, api_hash=Config.API_HASH, bot_token=Config.BOT_TOKEN, workers=50, sleep_threshold=10)
+Bot = Client("FileShareBot",
+             api_id=Config.APP_ID,
+             api_hash=Config.API_HASH,
+             bot_token=Config.BOT_TOKEN,
+             workers=50,
+             sleep_threshold=10)
 db = Database(Config.DB_URL, Config.DB_NAME)
 
 # ---------------- HEALTH SERVER ----------------
@@ -142,7 +146,6 @@ async def start_health_server():
     app.router.add_get('/', health_check)
     app.router.add_get('/health', health_check)
 
-    # Token activation webhook
     async def ad_complete(request):
         try:
             user_id = int(request.query.get("user"))
@@ -152,7 +155,6 @@ async def start_health_server():
             return web.Response(text=f"❌ Error: {e}", status=500)
 
     app.router.add_get('/ad_complete', ad_complete)
-
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', Config.PORT)
@@ -172,7 +174,8 @@ async def send_file(client: Client, user, encoded_file_id: str):
         if ftype in ["document", "video", "audio", "photo", "voice", "animation"]:
             caption = msg.caption or ""
             if Config.CUSTOM_CAPTION and msg.document:
-                caption = Config.CUSTOM_CAPTION.format(filename=msg.document.file_name, previouscaption=msg.caption or "")
+                caption = Config.CUSTOM_CAPTION.format(filename=msg.document.file_name,
+                                                       previouscaption=msg.caption or "")
             await msg.copy(chat_id=user.id, caption=caption, protect_content=Config.PROTECT_CONTENT)
         else:
             await client.send_message(user.id, "❌ Unsupported file type.")
@@ -184,7 +187,6 @@ async def send_file(client: Client, user, encoded_file_id: str):
 async def owner_auto_link(client: Client, message: Message):
     ftype = get_file_type(message)
     if ftype == "unknown": return
-
     try:
         sent_msg = await message.copy(chat_id=Config.CHANNEL_ID)
         file_id, unique_id = await get_file_id_and_ref(sent_msg)
@@ -207,12 +209,10 @@ async def owner_auto_link(client: Client, message: Message):
 async def start_command(client: Client, message: Message):
     await db.add_user(message.from_user.id, message.from_user.first_name, message.from_user.username)
 
-    # Owner bypass token
     if message.from_user.id == Config.OWNER_ID:
         await message.reply_text(f"Hi {message.from_user.mention}! You are the owner. Upload enabled.", quote=True)
         return
 
-    # Token check
     valid = await db.is_token_valid(message.from_user.id)
     if not valid:
         ad_url = await generate_ad_link(message.from_user.id)
@@ -241,5 +241,7 @@ if __name__ == "__main__":
         logger.error("Please set all required environment variables including ADRINOLINKS_API_KEY!")
         sys.exit(1)
     loop = asyncio.get_event_loop()
-    try: loop.run_until_complete(main())
-    except KeyboardInterrupt: logger.info("Bot stopped!")
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        logger.info("Bot stopped!")
