@@ -207,6 +207,24 @@ async def start_command(client: Client, message: Message):
                 file_id = decoded.replace('get-', '')
                 logger.info(f"Looking for video with file_id: {file_id}")
                 
+                # Check if user has valid token
+                if not await is_token_valid(user_id):
+                    # Create ad link for token activation
+                    bot_username = (await client.get_me()).username
+                    token_verify_link = f"https://t.me/{bot_username}?start=verify_{user_id}"
+                    ad_link = await shorten_url(token_verify_link)
+                    
+                    keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("📺 View Ad to Activate Token", url=ad_link)]
+                    ])
+                    
+                    await message.reply_text(
+                        "🎟️ **Token Required!**\n\n"
+                        "Video dekhne ke liye pehle ad dekhein aur token activate karein.",
+                        reply_markup=keyboard
+                    )
+                    return
+                
                 video = videos_collection.find_one({"file_id": file_id})
                 if video:
                     await message.reply_text("📥 Fetching your video...")
@@ -214,7 +232,7 @@ async def start_command(client: Client, message: Message):
                         await client.send_video(
                             user_id,
                             file_id,
-                            caption="🎬 Here's your video!\n\n📤 Share karne ke liye /upload use karein"
+                            caption="🎬 Here's your video!"
                         )
                     except Exception as send_error:
                         logger.error(f"Video send error: {send_error}")
@@ -294,6 +312,11 @@ Niche button click karke token activate karo - 12 hours valid rahega!
 async def upload_command(client: Client, message: Message):
     user_id = message.from_user.id
     
+    # Admin-only check
+    if user_id != ADMIN_ID:
+        await message.reply_text("❌ Sirf admin video upload kar sakte hain!")
+        return
+    
     # Check if user needs to view ad
     if await needs_ad_view(user_id):
         keyboard = InlineKeyboardMarkup([
@@ -332,6 +355,11 @@ async def upload_command(client: Client, message: Message):
 @app.on_message(filters.video & filters.private)
 async def handle_video(client: Client, message: Message):
     user_id = message.from_user.id
+    
+    # Admin-only check
+    if user_id != ADMIN_ID:
+        await message.reply_text("❌ Sirf admin video upload kar sakte hain!")
+        return
     
     # Check token
     if not await is_token_valid(user_id):
@@ -381,17 +409,16 @@ async def handle_video(client: Client, message: Message):
         encoded_id = base64.b64encode(f"get-{file_id}".encode()).decode()
         video_link = f"https://t.me/{bot_username}?start={encoded_id}"
         
-        # Shorten link with AdrinoLinks
-        short_link = await shorten_url(video_link)
+        # NO URL shortening for video links - only for token activation
         
         success_text = f"""
 ✅ **Video uploaded successfully!**
 
-📎 **Shareable Link (with Ad):**
-`{short_link}`
+📎 **Shareable Link:**
+`{video_link}`
 
 **Link ko copy karke share karein!**
-**User ko pehle ad dikhega, phir video access milega**
+**User token valid hoga to video turant milega**
 
 📊 Total videos: {(await get_user(user_id))['videos_uploaded']}
 """
