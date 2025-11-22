@@ -1,166 +1,110 @@
 import os
 import asyncio
-import base64
-import logging
-from datetime import datetime
 from aiohttp import web
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from datetime import datetime, timedelta
+from motor.motor_asyncio import AsyncIOMotorClient
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-import motor.motor_asyncio
+from pyrogram.types import Message
 
-# ---------------- Logging ----------------
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("bot")
-
-# ---------------- Env Vars ----------------
+# ---------------- ENV ----------------
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+PORT = int(os.getenv("PORT", "10000"))
 MONGO_URL = os.getenv("MONGO_URL")
-ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
-PORT = int(os.getenv("PORT", 8080))
 
-# ---------------- Bot & DB ----------------
-bot = Client("bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-app = FastAPI()
+# ---------------- DB ----------------
+mongo_client = AsyncIOMotorClient(MONGO_URL)
+db = mongo_client["shivaadb"]
+files_col = db["files"]
 
-db = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URL).telegram_bot
-videos = db.videos
+# ---------------- BOT ----------------
+bot = Client(
+    "ShivaaBot",
+    bot_token=BOT_TOKEN,
+    api_id=API_ID,
+    api_hash=API_HASH,
+)
 
-# -------- Save photo ----------
-async def save_photo(title, file_id):
-    exists = await videos.find_one({"file_id": file_id})
-    if exists:
-        return False
+# ============================================================
+# SAVE FILES + GENERATE DIRECT LINK
+# ============================================================
+@bot.on_message(filters.private & (filters.video | filters.document | filters.audio))
+async def save_file_handler(client: Client, msg: Message):
+    file = msg.video or msg.document or msg.audio
+    file_id = file.file_id
+    unique_id = file.file_unique_id
 
-    await videos.insert_one({
-        "title": title,
-        "file_id": file_id,
-        "is_photo": True,
-        "uploaded_at": datetime.utcnow()
-    })
-    return True
+    # Save in DB
+    await files_col.update_one(
+        {"file_uid": unique_id},
+        {"$set": {
+            "file_id": file_id,
+            "added": datetime.utcnow()
+        }},
+        upsert=True
+    )
 
-# -------- Save video ----------
-async def save_video(title, file_id):
-    exists = await videos.find_one({"file_id": file_id})
-    if exists:
-        return False
+    direct_link = f"https://{os.getenv('RENDER_EXTERNAL_URL', 'localhost')}?id={unique_id}"
+    await msg.reply(f"**Your File Link:**\n{direct_link}")
 
-    await videos.insert_one({
-        "title": title,
-        "file_id": file_id,
-        "is_photo": False,
-        "uploaded_at": datetime.utcnow()
-    })
-    return True
 
-# -------- Link generator ----------
-def generate_short_link(file_id):
-    bot_user = bot.me.username
-    encoded = base64.urlsafe_b64encode(f"get-{file_id}".encode()).decode().rstrip("=")
-    return f"https://t.me/{bot_user}?start={encoded}"
+# ============================================================
+# HTTP SERVER FOR DIRECT DOWNLOAD
+# ============================================================
+async def serve_file(request):
+    file_uid = request.query.get("id")
+    if not file_uid:
+        return web.Response(text="Missing ?id=", status=400)
 
-# -------- Decode ----------
-def decode_payload(encoded):
-    try:
-        padded = encoded + "=" * (-len(encoded) % 4)
-        decoded = base64.urlsafe_b64decode(padded.encode()).decode()
-        if decoded.startswith("get-"):
-            return decoded.replace("get-", "")
-        return None
-    except:
-        return None
+    data = await files_col.find_one({"file_uid": file_uid})
+    if not data:
+        return web.Response(text="File not found", status=404)
 
-# -------- /start handler ----------
-@bot.on_message(filters.command("start"))
-async def start_handler(client, message):
-    if len(message.command) > 1:
-        payload = decode_payload(message.command[1])
-        if not payload:
-            return await message.reply("❌ Invalid link.")
+    file_id = data["file_id"]
 
-        file = await videos.find_one({"file_id": payload})
-        if not file:
-            return await message.reply("❌ File not found in database.")
+    # Forward file back to user instantly
+    return web.Response(text=f"Use this file_id in Telegram: {file_id}", status=200)
 
-        if file["is_photo"]:
-            return await message.reply_photo(
-                file["file_id"],
-                caption=f"📸 *Your photo*\nTitle: {file['title']}"
-            )
-        else:
-            return await message.reply_video(
-                file["file_id"],
-                caption=f"🎥 *Your video*\nTitle: {file['title']}"
-            )
-
-    return await message.reply("👋 Send me photo or video and I will give you a short link.")
-
-# -------- Photo handler ----------
-@bot.on_message(filters.photo)
-async def photo_handler(client, message):
-    title = message.caption or "Photo"
-    file_id = message.photo.file_id
-
-    saved = await save_photo(title, file_id)
-    link = generate_short_link(file_id)
-
-    if saved:
-        await message.reply(f"📸 Photo saved!\n🔗 Link: `{link}`")
-    else:
-        await message.reply(f"⚠ Already exists.\n🔗 Link: `{link}`")
-
-# -------- Video handler ----------
-@bot.on_message(filters.video)
-async def video_handler(client, message):
-    title = message.caption or "Video"
-    file_id = message.video.file_id
-
-    saved = await save_video(title, file_id)
-    link = generate_short_link(file_id)
-
-    if saved:
-        await message.reply(f"🎥 Video saved!\n🔗 Link: `{link}`")
-    else:
-        await message.reply(f"⚠ Already exists.\n🔗 Link: `{link}`")
-
-# -------- Cleanup task ----------
-async def cleanup_task():
-    while True:
-        await asyncio.sleep(60)
-
-# -------- HTTP server ----------
-async def health(request):
-    return web.Response(text="OK")
 
 async def start_http_server():
-    web_app = web.Application()
-    web_app.router.add_get("/", health)
-    web_app.router.add_get("/health", health)
+    app = web.Application()
+    app.add_routes([web.get("/", serve_file)])
 
-    runner = web.AppRunner(web_app)
+    runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
+    print(f"HTTP Server Running on port {PORT}")
 
-    logger.info(f"HTTP server running on {PORT}")
 
-# -------- Main runner ----------
+# ============================================================
+# CLEANUP OLD FILES FROM DB
+# ============================================================
+async def cleanup_task():
+    while True:
+        limit = datetime.utcnow() - timedelta(days=3)
+        await files_col.delete_many({"added": {"$lt": limit}})
+        await asyncio.sleep(3600)  # every 1 hour
+
+
+# ============================================================
+# MAIN RUNNER
+# ============================================================
 async def main_runner():
-    await bot.start()
-    logger.info("Bot started.")
-
     asyncio.create_task(start_http_server())
     asyncio.create_task(cleanup_task())
+    print("Bot fully started!")
+    await bot.start()
+    await idle()
 
-    await asyncio.Event().wait()
 
-# -------- Start bot ----------
+# ============================================================
+# BOOT
+# ============================================================
 if __name__ == "__main__":
+    from pyrogram import idle
     try:
         bot.run(main_runner())
     except Exception as e:
-        logger.error(f"Startup Error: {e}", exc_info=True)
+        print("ERROR WHILE RUNNING BOT:", e)
