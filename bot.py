@@ -1,686 +1,696 @@
+# File Sharing Bot - Complete Single File Implementation
+# Based on JishuDeveloper's File-Sharing-Bot
+# Combined all modules into single bot.py
+
 import os
+import sys
+import time
 import asyncio
-from datetime import datetime, timedelta
-from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from pymongo import MongoClient
-from dotenv import load_dotenv
+import datetime
+import string
+import random
+from typing import Union
 import logging
-import requests
-from aiohttp import web
+import traceback
 
-# Load environment variables
-load_dotenv()
+# Pyrogram imports
+from pyrogram import Client, filters, enums
+from pyrogram.types import (
+    Message, 
+    InlineKeyboardMarkup, 
+    InlineKeyboardButton,
+    CallbackQuery,
+    User
+)
+from pyrogram.errors import (
+    FloodWait, 
+    UserIsBlocked, 
+    InputUserDeactivated,
+    UserNotParticipant,
+    PeerIdInvalid,
+    ChannelInvalid
+)
+from pyrogram.errors.exceptions.bad_request_400 import MessageEmpty
 
-# Validate configuration
-if not os.getenv('ADRINOLINKS_API_KEY'):
-    print("⚠️  Warning: ADRINOLINKS_API_KEY not set in .env file!")
+# MongoDB imports
+from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import DuplicateKeyError
 
-# Logging setup
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Configuration
-API_ID = int(os.getenv('API_ID'))
-API_HASH = os.getenv('API_HASH')
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-MONGODB_URI = os.getenv('MONGODB_URI')
-ADMIN_ID = int(os.getenv('ADMIN_ID'))
-TOKEN_VALIDITY_HOURS = int(os.getenv('TOKEN_VALIDITY_HOURS', 12))
-ADRINOLINKS_API_KEY = os.getenv('ADRINOLINKS_API_KEY')
-STORAGE_CHANNEL_ID = int(os.getenv('STORAGE_CHANNEL_ID', 0))
-PORT = int(os.getenv('PORT', 10000))
+# ============================================
+# CONFIGURATION
+# ============================================
 
-# Initialize Pyrogram Client
-app = Client(
-    "token_ad_bot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN
+class Config:
+    # Required environment variables
+    API_HASH = os.environ.get("API_HASH", "")
+    APP_ID = int(os.environ.get("APP_ID", "0"))
+    BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+    CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "0"))
+    OWNER_ID = int(os.environ.get("OWNER_ID", "0"))
+    
+    # Database configuration
+    DB_URL = os.environ.get("DB_URL", "")
+    DB_NAME = os.environ.get("DB_NAME", "FileSharingBot")
+    
+    # Optional configurations
+    PROTECT_CONTENT = os.environ.get("PROTECT_CONTENT", "False").lower() == "true"
+    FILE_AUTO_DELETE = int(os.environ.get("FILE_AUTO_DELETE", "600"))  # in seconds
+    
+    # Admin configuration
+    ADMINS = [OWNER_ID]
+    admin_list = os.environ.get("ADMINS", "")
+    if admin_list:
+        ADMINS.extend([int(x) for x in admin_list.split()])
+    
+    # Force subscribe configuration
+    FORCE_SUB_CHANNEL = os.environ.get("FORCE_SUB_CHANNEL", "0")
+    if FORCE_SUB_CHANNEL != "0":
+        try:
+            FORCE_SUB_CHANNEL = int(FORCE_SUB_CHANNEL)
+        except:
+            FORCE_SUB_CHANNEL = str(FORCE_SUB_CHANNEL)
+    
+    # Custom messages
+    START_MESSAGE = os.environ.get("START_MESSAGE", 
+        "<b>ðŸ‘‹ Hello {mention}!\n\n"
+        "I'm a File Sharing Bot.\n\n"
+        "You can store files and share them using special links!</b>"
+    )
+    
+    FORCE_SUB_MESSAGE = os.environ.get("FORCE_SUB_MESSAGE",
+        "<b>âš ï¸ Join our channel first!\n\n"
+        "Please join @{channel} to use this bot.\n\n"
+        "After joining, click on /start again.</b>"
+    )
+    
+    # Custom caption and other texts
+    CUSTOM_CAPTION = os.environ.get("CUSTOM_CAPTION", "")
+    DISABLE_CHANNEL_BUTTON = os.environ.get("DISABLE_CHANNEL_BUTTON", "False").lower() == "true"
+    BOT_STATS_TEXT = os.environ.get("BOT_STATS_TEXT", 
+        "<b>ðŸ“Š Bot Statistics\n\n"
+        "â± Bot Uptime: {uptime}\n"
+        "ðŸ‘¥ Total Users: {users}\n"
+        "ðŸ“ Total Files: {files}</b>"
+    )
+    USER_REPLY_TEXT = os.environ.get("USER_REPLY_TEXT", 
+        "<b>âŒ Invalid command!\n\nUse /start to start the bot.</b>"
+    )
+
+# ============================================
+# DATABASE MANAGER
+# ============================================
+
+class Database:
+    def __init__(self, uri, database_name):
+        self._client = AsyncIOMotorClient(uri)
+        self.db = self._client[database_name]
+        self.users = self.db['users']
+        self.files = self.db['file_ids']
+        
+    async def add_user(self, user_id, first_name, username):
+        """Add or update user in database"""
+        try:
+            user_data = {
+                'id': user_id,
+                'first_name': first_name,
+                'username': username,
+                'join_date': datetime.datetime.now()
+            }
+            await self.users.update_one(
+                {'id': user_id},
+                {'$set': user_data},
+                upsert=True
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Error adding user: {e}")
+            return False
+    
+    async def get_user(self, user_id):
+        """Get user from database"""
+        return await self.users.find_one({'id': user_id})
+    
+    async def get_all_users(self):
+        """Get all users"""
+        return await self.users.find().to_list(length=None)
+    
+    async def total_users_count(self):
+        """Get total users count"""
+        return await self.users.count_documents({})
+    
+    async def add_file(self, file_id, unique_id, caption=None):
+        """Add file to database"""
+        try:
+            file_data = {
+                'file_id': file_id,
+                'unique_id': unique_id,
+                'caption': caption
+            }
+            await self.files.insert_one(file_data)
+            return True
+        except Exception as e:
+            logger.error(f"Error adding file: {e}")
+            return False
+    
+    async def get_file(self, unique_id):
+        """Get file from database"""
+        return await self.files.find_one({'unique_id': unique_id})
+    
+    async def delete_file(self, unique_id):
+        """Delete file from database"""
+        return await self.files.delete_one({'unique_id': unique_id})
+    
+    async def total_files_count(self):
+        """Get total files count"""
+        return await self.files.count_documents({})
+
+# ============================================
+# HELPER FUNCTIONS
+# ============================================
+
+def get_readable_time(seconds: int) -> str:
+    """Convert seconds to readable time format"""
+    periods = [
+        ('d', 60*60*24),
+        ('h', 60*60),
+        ('m', 60),
+        ('s', 1)
+    ]
+    
+    result = []
+    for period_name, period_seconds in periods:
+        if seconds >= period_seconds:
+            period_value, seconds = divmod(seconds, period_seconds)
+            result.append(f'{int(period_value)}{period_name}')
+    
+    return ' '.join(result) if result else '0s'
+
+def encode_file_id(file_id: str) -> str:
+    """Encode file_id to base64"""
+    import base64
+    return base64.urlsafe_b64encode(file_id.encode()).decode().rstrip("=")
+
+def decode_file_id(encoded_id: str) -> str:
+    """Decode base64 to file_id"""
+    import base64
+    # Add padding if needed
+    padding = 4 - len(encoded_id) % 4
+    if padding != 4:
+        encoded_id += '=' * padding
+    return base64.urlsafe_b64decode(encoded_id.encode()).decode()
+
+async def is_user_joined(client: Client, user_id: int, channel) -> bool:
+    """Check if user is joined to force sub channel"""
+    if channel == "0" or channel == 0:
+        return True
+    
+    try:
+        member = await client.get_chat_member(channel, user_id)
+        return member.status != enums.ChatMemberStatus.BANNED
+    except UserNotParticipant:
+        return False
+    except Exception as e:
+        logger.error(f"Error checking user membership: {e}")
+        return True  # Return True on error to avoid blocking users
+
+def get_file_type(message: Message) -> str:
+    """Get the type of file in message"""
+    if message.document:
+        return "document"
+    elif message.video:
+        return "video"
+    elif message.audio:
+        return "audio"
+    elif message.photo:
+        return "photo"
+    elif message.voice:
+        return "voice"
+    elif message.video_note:
+        return "video_note"
+    elif message.sticker:
+        return "sticker"
+    elif message.animation:
+        return "animation"
+    else:
+        return "unknown"
+
+async def get_file_id_and_ref(message: Message) -> tuple:
+    """Get file_id and file reference from message"""
+    file_type = get_file_type(message)
+    
+    if file_type == "document":
+        return message.document.file_id, message.document.file_unique_id
+    elif file_type == "video":
+        return message.video.file_id, message.video.file_unique_id
+    elif file_type == "audio":
+        return message.audio.file_id, message.audio.file_unique_id
+    elif file_type == "photo":
+        return message.photo.file_id, message.photo.file_unique_id
+    elif file_type == "voice":
+        return message.voice.file_id, message.voice.file_unique_id
+    elif file_type == "video_note":
+        return message.video_note.file_id, message.video_note.file_unique_id
+    elif file_type == "sticker":
+        return message.sticker.file_id, message.sticker.file_unique_id
+    elif file_type == "animation":
+        return message.animation.file_id, message.animation.file_unique_id
+    
+    return None, None
+
+# ============================================
+# BOT INITIALIZATION
+# ============================================
+
+# Initialize bot
+Bot = Client(
+    "FileShareBot",
+    api_id=Config.APP_ID,
+    api_hash=Config.API_HASH,
+    bot_token=Config.BOT_TOKEN,
+    workers=50,
+    sleep_threshold=10
 )
 
-# MongoDB Setup
-mongo_client = MongoClient(MONGODB_URI)
-db = mongo_client['telegram_bot']
-users_collection = db['users']
-videos_collection = db['videos']
+# Initialize database
+db = Database(Config.DB_URL, Config.DB_NAME)
 
-# Create indexes
-users_collection.create_index("user_id", unique=True)
-users_collection.create_index("token_expires_at")
-videos_collection.create_index("file_id", unique=True)
+# Bot start time for uptime calculation
+BOT_START_TIME = time.time()
 
+# ============================================
+# COMMAND HANDLERS
+# ============================================
 
-# Helper Functions
-async def get_user(user_id: int):
-    """Get user from database"""
-    return users_collection.find_one({"user_id": user_id})
-
-
-async def create_user(user_id: int, username: str = None):
-    """Create new user in database"""
-    user_data = {
-        "user_id": user_id,
-        "username": username,
-        "has_token": False,
-        "token_expires_at": None,
-        "last_ad_view": None,
-        "videos_uploaded": 0,
-        "joined_at": datetime.utcnow()
-    }
-    users_collection.insert_one(user_data)
-    return user_data
-
-
-async def is_token_valid(user_id: int):
-    """Check if user's token is valid"""
-    user = await get_user(user_id)
-    if not user or not user.get('has_token'):
-        return False
-    
-    expires_at = user.get('token_expires_at')
-    if not expires_at:
-        return False
-    
-    return datetime.utcnow() < expires_at
-
-
-async def activate_token(user_id: int):
-    """Activate token for user"""
-    expires_at = datetime.utcnow() + timedelta(hours=TOKEN_VALIDITY_HOURS)
-    users_collection.update_one(
-        {"user_id": user_id},
-        {"$set": {
-            "has_token": True,
-            "token_expires_at": expires_at,
-            "last_ad_view": datetime.utcnow()
-        }}
-    )
-    return expires_at
-
-
-async def needs_ad_view(user_id: int):
-    """Check if user needs to view ad"""
-    user = await get_user(user_id)
-    if not user:
-        return True
-    
-    last_ad_view = user.get('last_ad_view')
-    if not last_ad_view:
-        return True
-    
-    # Check if 12 hours passed since last ad view
-    return datetime.utcnow() - last_ad_view > timedelta(hours=TOKEN_VALIDITY_HOURS)
-
-
-async def cleanup_expired_tokens():
-    """Remove expired tokens automatically"""
-    result = users_collection.update_many(
-        {"token_expires_at": {"$lt": datetime.utcnow()}},
-        {"$set": {"has_token": False, "token_expires_at": None}}
-    )
-    if result.modified_count > 0:
-        logger.info(f"Cleaned up {result.modified_count} expired tokens")
-
-
-async def save_video(file_id: str, user_id: int, file_name: str):
-    """Save video to database (skip if duplicate)"""
-    # Check if video already exists
-    existing = videos_collection.find_one({"file_id": file_id})
-    if existing:
-        logger.info(f"Video already exists: {file_id}")
-        return
-    
-    video_data = {
-        "file_id": file_id,
-        "user_id": user_id,
-        "file_name": file_name,
-        "uploaded_at": datetime.utcnow()
-    }
-    videos_collection.insert_one(video_data)
-    logger.info(f"Video saved: {file_id}")
-
-
-async def shorten_url(long_url: str):
-    """Shorten URL using AdrinoLinks API (adrinolinks.in)"""
-    if not ADRINOLINKS_API_KEY:
-        logger.warning("ADRINOLINKS_API_KEY not set, returning original URL")
-        return long_url
-    
-    try:
-        import urllib.parse
-        encoded_url = urllib.parse.quote(long_url, safe='')
-        api_url = f"https://adrinolinks.in/api?api={ADRINOLINKS_API_KEY}&url={encoded_url}&format=text"
-        response = requests.get(api_url, timeout=10)
-        
-        logger.info(f"AdrinoLinks API response status: {response.status_code}")
-        
-        if response.status_code == 200:
-            shortened_url = response.text.strip()
-            if shortened_url and shortened_url.startswith('http'):
-                logger.info(f"URL shortened successfully: {shortened_url}")
-                return shortened_url
-            else:
-                logger.error(f"Invalid shortened URL: {shortened_url}")
-        
-        return long_url
-    except Exception as e:
-        logger.error(f"URL shortening error: {e}")
-        return long_url
-
-
-# Command Handlers
-@app.on_message(filters.command("start") & filters.private)
+@Bot.on_message(filters.command("start") & filters.private)
 async def start_command(client: Client, message: Message):
+    """Handle /start command"""
     user_id = message.from_user.id
-    username = message.from_user.username
     
-    # Handle deep link parameters
+    # Add user to database
+    await db.add_user(
+        user_id=user_id,
+        first_name=message.from_user.first_name,
+        username=message.from_user.username
+    )
+    
+    # Check if there's a file ID in the command
     if len(message.command) > 1:
-        param = message.command[1]
+        # This is a file share link
+        encoded_file_id = message.command[1]
         
-        # Handle token verification from ad link
-        if param.startswith('verify_'):
-            await activate_token(user_id)
-            await message.reply_text(
-                "✅ **Token Activated!**\n\n"
-                "Ab aap bot use kar sakte ho!\n"
-                "Use /upload to upload videos."
-            )
-            return            # Handle video access from shared link
-        try:
-            import base64
-            logger.info(f"🔍 Deeplink parameter received: {param}")
+        # Check force subscribe
+        if Config.FORCE_SUB_CHANNEL != "0" and Config.FORCE_SUB_CHANNEL != 0:
+            is_joined = await is_user_joined(client, user_id, Config.FORCE_SUB_CHANNEL)
             
-            # Add padding for proper base64 decoding
-            missing_padding = len(param) % 4
-            if missing_padding:
-                param += '=' * (4 - missing_padding)
-                logger.info(f"✅ Added {4 - missing_padding} padding characters")
-            
-            decoded = base64.b64decode(param).decode('utf-8')
-            logger.info(f"✅ Decoded parameter: {decoded}")
-            
-            if decoded.startswith('get-'):
-                file_id = decoded.replace('get-', '')
-                logger.info(f"🔍 Looking for video with file_id: {file_id}")
-                
-                # Check if user has valid token
-                token_valid = await is_token_valid(user_id)
-                logger.info(f"🎟️ Token valid for user {user_id}: {token_valid}")
-                
-                if not token_valid:
-                    # Create ad link for token activation
-                    bot_username = (await client.get_me()).username
-                    token_verify_link = f"https://t.me/{bot_username}?start=verify_{user_id}"
-                    ad_link = await shorten_url(token_verify_link)
+            if not is_joined:
+                try:
+                    invite_link = await client.create_chat_invite_link(Config.FORCE_SUB_CHANNEL)
+                    force_text = Config.FORCE_SUB_MESSAGE.format(
+                        first=message.from_user.first_name,
+                        last=message.from_user.last_name or "",
+                        username=message.from_user.username or "No Username",
+                        mention=message.from_user.mention,
+                        id=message.from_user.id,
+                        channel=str(Config.FORCE_SUB_CHANNEL).replace("-100", "")
+                    )
                     
-                    keyboard = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("📺 View Ad to Activate Token", url=ad_link)]
-                    ])
-                    
-                    logger.info(f"❌ Token required - showing ad link to user {user_id}")
+                    buttons = [[
+                        InlineKeyboardButton("ðŸ“¢ Join Channel", url=invite_link.invite_link)
+                    ],[
+                        InlineKeyboardButton("ðŸ”„ Try Again", callback_data=f"check_sub:{encoded_file_id}")
+                    ]]
                     
                     await message.reply_text(
-                        "🎟️ **Token Required!**\n\n"
-                        "Video dekhne ke liye pehle ad dekhein aur token activate karein.",
-                        reply_markup=keyboard
+                        force_text,
+                        reply_markup=InlineKeyboardMarkup(buttons),
+                        quote=True
                     )
                     return
-                
-                video = videos_collection.find_one({"file_id": file_id})
-                logger.info(f"📊 Database query result: {'Found' if video else 'Not Found'}")
-                
-                if video:
-                    logger.info(f"✅ Video found in database - sending to user {user_id}")
-                    await message.reply_text("📥 Fetching your video...")
-                    try:
-                        logger.info(f"📤 Attempting to send video with file_id: {file_id}")
-                        await client.send_video(
-                            user_id,
-                            file_id,
-                            caption="🎬 Here's your video!"
-                        )
-                        logger.info(f"✅ Video sent successfully to user {user_id}")
-                    except Exception as send_error:
-                        logger.error(f"❌ Video send error: {send_error}")
-                        logger.error(f"❌ Error type: {type(send_error).__name__}")
-                        await message.reply_text("❌ Video send karne mein error! File ID invalid ho sakti hai.")
-                    return
-                else:
-                    logger.warning(f"❌ Video not found in database for file_id: {file_id}")
-                    logger.warning(f"📊 Total videos in database: {videos_collection.count_documents({})}")
-                    await message.reply_text("❌ Video not found in database!")
-                    return
-        except Exception as e:
-            logger.error(f"❌ Deeplink decode error: {e}")
-            logger.error(f"❌ Error type: {type(e).__name__}")
-            import traceback
-            logger.error(f"❌ Full traceback:\n{traceback.format_exc()}")
-            await message.reply_text(f"❌ Link decode error: {str(e)}\n\nUse /start for help.")
-            return
-    
-    # Create user if doesn't exist
-    user = await get_user(user_id)
-    if not user:
-        await create_user(user_id, username)
-    
-    # Check token status
-    has_valid_token = await is_token_valid(user_id)
-    
-    if has_valid_token:
-        user = await get_user(user_id)
-        expires_at = user['token_expires_at']
-        time_left = expires_at - datetime.utcnow()
-        hours_left = int(time_left.total_seconds() / 3600)
+                except Exception as e:
+                    logger.error(f"Error creating invite link: {e}")
         
-        welcome_text = f"""
-✅ **Welcome Back!**
-
-🎟️ **Token Status:** Active
-⏰ **Expires In:** {hours_left} hours
-
-**Commands:**
-📤 /upload - Upload video aur link generate karo
-📊 /stats - Apne stats dekho
-❓ /help - Help dekhein
-
-**Video kaise upload karein:**
-1. /upload command use karein
-2. Video file send karein
-3. Link milega jo aap share kar sakte ho!
-"""
-        
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📤 Upload Video", callback_data="upload")],
-            [InlineKeyboardButton("📊 My Stats", callback_data="stats")]
-        ])
+        # Send the file
+        await send_file(client, message, encoded_file_id)
+    
     else:
-        welcome_text = f"""
-👋 **Welcome to Token Ad Bot!**
-
-🎟️ **Token Status:** Inactive
-
-Bot use karne ke liye token activate karein!
-
-**Token Activation:**
-Niche button click karke token activate karo - 12 hours valid rahega!
-
-⚠️ **Note:** Video links automatically ad ke saath aayenge. User jab link open karega, pehle ad dekhega!
-"""
+        # Normal start message
+        start_text = Config.START_MESSAGE.format(
+            first=message.from_user.first_name,
+            last=message.from_user.last_name or "",
+            username=message.from_user.username or "No Username",
+            mention=message.from_user.mention,
+            id=message.from_user.id
+        )
         
-        # Create ad link for token activation
-        bot_username = (await client.get_me()).username
-        token_verify_link = f"https://t.me/{bot_username}?start=verify_{user_id}"
-        ad_link = await shorten_url(token_verify_link)
-        
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📺 View Ad to Activate Token", url=ad_link)]
-        ])
-    
-    await message.reply_text(welcome_text, reply_markup=keyboard)
-
-
-@app.on_message(filters.command("upload") & filters.private)
-async def upload_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    
-    # Admin-only check
-    if user_id != ADMIN_ID:
-        await message.reply_text("❌ Sirf admin video upload kar sakte hain!")
-        return
-    
-    # Check if user needs to view ad
-    if await needs_ad_view(user_id):
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📺 View Ad", url=AD_URL)],
-            [InlineKeyboardButton("✅ Verify & Continue", callback_data="verify_token")]
-        ])
+        buttons = [[
+            InlineKeyboardButton("ðŸ“¢ Updates", url="https://t.me/JishuBotz"),
+            InlineKeyboardButton("ðŸ’¬ Support", url="https://t.me/JishuDeveloper")
+        ]]
         
         await message.reply_text(
-            "⏰ **12 hours ho gaye!**\n\n"
-            "Bot continue use karne ke liye ad dekhein aur verify karein.",
-            reply_markup=keyboard
+            start_text,
+            reply_markup=InlineKeyboardMarkup(buttons),
+            quote=True
         )
-        return
-    
-    # Check token validity
-    if not await is_token_valid(user_id):
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📺 View Ad & Get Token", url=AD_URL)],
-            [InlineKeyboardButton("✅ Verify Token", callback_data="verify_token")]
-        ])
-        
-        await message.reply_text(
-            "❌ **Token Expired!**\n\n"
-            "Pehle token activate karein.",
-            reply_markup=keyboard
-        )
-        return
-    
-    await message.reply_text(
-        "📤 **Upload your video:**\n\n"
-        "Video file send karein (MP4, MKV, etc.)\n"
-        "Max size: 2GB"
-    )
 
-
-@app.on_message(filters.video & filters.private)
-async def handle_video(client: Client, message: Message):
-    user_id = message.from_user.id
-    
-    # Admin-only check
-    if user_id != ADMIN_ID:
-        await message.reply_text("❌ Sirf admin video upload kar sakte hain!")
-        return
-    
-    # Check token
-    if not await is_token_valid(user_id):
-        await message.reply_text("❌ Token invalid! Pehle /start use karein.")
-        return
-    
-    # Check if needs ad view
-    if await needs_ad_view(user_id):
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📺 View Ad", url=AD_URL)],
-            [InlineKeyboardButton("✅ Verify", callback_data="verify_token")]
-        ])
-        await message.reply_text(
-            "⏰ 12 hours complete! Ad dekhein.",
-            reply_markup=keyboard
-        )
-        return
-    
-    processing_msg = await message.reply_text("⏳ Processing video...")
-    
+async def send_file(client: Client, message: Message, encoded_file_id: str):
+    """Send file to user"""
     try:
-        # Forward to storage channel if configured and valid
-        if STORAGE_CHANNEL_ID and STORAGE_CHANNEL_ID != 0:
+        # Decode file ID
+        decoded_ids = decode_file_id(encoded_file_id).split("-")
+        
+        if len(decoded_ids) == 1:
+            # Single file
+            file_id = int(decoded_ids[0])
+            
             try:
-                stored_msg = await message.forward(STORAGE_CHANNEL_ID)
-                file_id = stored_msg.video.file_id
-                logger.info(f"Video forwarded to storage channel: {file_id}")
-            except Exception as forward_error:
-                logger.error(f"Storage channel forward failed: {forward_error}")
-                # Fallback to direct file_id if forwarding fails
-                file_id = message.video.file_id
-                logger.info("Using direct file_id instead")
+                msg = await client.get_messages(Config.CHANNEL_ID, file_id)
+                
+                if not msg:
+                    await message.reply_text("âŒ File not found!")
+                    return
+                
+                caption = msg.caption
+                if Config.CUSTOM_CAPTION and msg.document:
+                    caption = Config.CUSTOM_CAPTION.format(
+                        filename=msg.document.file_name,
+                        previouscaption=msg.caption or ""
+                    )
+                
+                # Send file
+                sent_msg = await msg.copy(
+                    chat_id=message.from_user.id,
+                    caption=caption,
+                    protect_content=Config.PROTECT_CONTENT,
+                    reply_markup=msg.reply_markup if not Config.DISABLE_CHANNEL_BUTTON else None
+                )
+                
+                # Auto delete if configured
+                if Config.FILE_AUTO_DELETE > 0:
+                    await asyncio.sleep(Config.FILE_AUTO_DELETE)
+                    try:
+                        await sent_msg.delete()
+                        await message.delete()
+                    except:
+                        pass
+                
+            except Exception as e:
+                logger.error(f"Error sending file: {e}")
+                await message.reply_text(f"âŒ Error sending file: {str(e)}")
+        
         else:
-            file_id = message.video.file_id
-            logger.info("No storage channel configured, using direct file_id")
-        
-        # Save to database
-        await save_video(
-            file_id,
-            user_id,
-            message.video.file_name or "video.mp4"
-        )
-        
-        # Update user stats
-        users_collection.update_one(
-            {"user_id": user_id},
-            {"$inc": {"videos_uploaded": 1}}
-        )
-        
-        # Generate base64 encoded shareable link
-        import base64
-        bot_username = (await client.get_me()).username
-        
-        # Encode file_id to base64 for cleaner link
-        encoded_id = base64.b64encode(f"get-{file_id}".encode()).decode()
-        video_link = f"https://t.me/{bot_username}?start={encoded_id}"
-        
-        # NO URL shortening for video links - only for token activation
-        
-        success_text = f"""
-✅ **Video uploaded successfully!**
-
-📎 **Shareable Link:**
-`{video_link}`
-
-**Link ko copy karke share karein!**
-**User token valid hoga to video turant milega**
-
-📊 Total videos: {(await get_user(user_id))['videos_uploaded']}
-"""
-        
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📤 Upload Another", callback_data="upload")]
-        ])
-        
-        await processing_msg.edit_text(success_text, reply_markup=keyboard)
-        
+            # Batch files
+            start_id = int(decoded_ids[0])
+            end_id = int(decoded_ids[1])
+            
+            batch_messages = []
+            for msg_id in range(start_id, end_id + 1):
+                try:
+                    msg = await client.get_messages(Config.CHANNEL_ID, msg_id)
+                    if msg and (msg.document or msg.video or msg.audio or msg.photo):
+                        batch_messages.append(msg)
+                except:
+                    continue
+            
+            if not batch_messages:
+                await message.reply_text("âŒ No files found!")
+                return
+            
+            # Send all files
+            for msg in batch_messages:
+                caption = msg.caption
+                if Config.CUSTOM_CAPTION and msg.document:
+                    caption = Config.CUSTOM_CAPTION.format(
+                        filename=msg.document.file_name,
+                        previouscaption=msg.caption or ""
+                    )
+                
+                sent_msg = await msg.copy(
+                    chat_id=message.from_user.id,
+                    caption=caption,
+                    protect_content=Config.PROTECT_CONTENT,
+                    reply_markup=msg.reply_markup if not Config.DISABLE_CHANNEL_BUTTON else None
+                )
+                
+                await asyncio.sleep(1)  # Small delay between files
+            
+            # Auto delete batch
+            if Config.FILE_AUTO_DELETE > 0:
+                await asyncio.sleep(Config.FILE_AUTO_DELETE)
+                try:
+                    await message.delete()
+                except:
+                    pass
+    
     except Exception as e:
-        logger.error(f"Error processing video: {e}")
-        try:
-            await processing_msg.edit_text("❌ Error uploading video. Try again.")
-        except:
-            pass  # Ignore if message edit fails
+        logger.error(f"Error in send_file: {e}")
+        await message.reply_text("âŒ An error occurred while processing your request.")
 
+@Bot.on_message(filters.command("users") & filters.user(Config.ADMINS))
+async def users_command(client: Client, message: Message):
+    """Show total users count"""
+    total = await db.total_users_count()
+    await message.reply_text(f"ðŸ‘¥ Total Users: **{total}**")
 
-@app.on_message(filters.command("stats") & filters.private)
-async def stats_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    user = await get_user(user_id)
-    
-    if not user:
-        await message.reply_text("❌ User not found. Use /start first.")
-        return
-    
-    has_valid_token = await is_token_valid(user_id)
-    
-    if has_valid_token:
-        expires_at = user['token_expires_at']
-        time_left = expires_at - datetime.utcnow()
-        hours_left = int(time_left.total_seconds() / 3600)
-        token_status = f"✅ Active ({hours_left}h left)"
-    else:
-        token_status = "❌ Inactive"
-    
-    stats_text = f"""
-📊 **Your Statistics**
-
-👤 **User ID:** `{user_id}`
-🎟️ **Token Status:** {token_status}
-📤 **Videos Uploaded:** {user['videos_uploaded']}
-📅 **Joined:** {user['joined_at'].strftime('%d %b %Y')}
-"""
-    
-    await message.reply_text(stats_text)
-
-
-@app.on_message(filters.command("help") & filters.private)
-async def help_command(client: Client, message: Message):
-    help_text = """
-❓ **Help & Commands**
-
-**Basic Commands:**
-/start - Bot start karein
-/upload - Video upload karein
-/stats - Apne stats dekho
-/help - Ye message
-
-**Token System:**
-• Token har 12 ghante valid rehta hai
-• Renew karne ke liye ad dekhna mandatory hai
-• Bina token ke bot use nahi kar sakte
-
-**Video Upload:**
-1. /upload command use karein
-2. Video file send karein (max 2GB)
-3. Shareable link milega
-
-**Questions?**
-Contact admin for support.
-"""
-    
-    await message.reply_text(help_text)
-
-
-# Callback Query Handlers
-@app.on_callback_query(filters.regex("^verify_token$"))
-async def verify_token_callback(client: Client, callback_query: CallbackQuery):
-    await callback_query.answer(
-        "❌ Ad dekhna zaroori hai!\nPehle 'View Ad to Activate Token' button click karein.",
-        show_alert=True
-    )
-    return
-    
-    user_id = callback_query.from_user.id
-    
-    # Activate token
-    expires_at = await activate_token(user_id)
-    
-    success_text = f"""
-✅ **Token Activated Successfully!**
-
-⏰ **Valid Until:** {expires_at.strftime('%d %b %Y, %I:%M %p')} UTC
-⏳ **Duration:** {TOKEN_VALIDITY_HOURS} hours
-
-Ab aap bot use kar sakte ho!
-
-**Commands:**
-📤 /upload - Video upload karein
-📊 /stats - Stats dekhein
-"""
-    
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📤 Upload Video", callback_data="upload")],
-        [InlineKeyboardButton("📊 My Stats", callback_data="stats")]
-    ])
-    
-    await callback_query.message.edit_text(success_text, reply_markup=keyboard)
-    await callback_query.answer("✅ Token activated!", show_alert=True)
-
-
-@app.on_callback_query(filters.regex("^upload$"))
-async def upload_callback(client: Client, callback_query: CallbackQuery):
-    await callback_query.message.reply_text(
-        "📤 **Upload your video:**\n\n"
-        "Video file send karein (MP4, MKV, etc.)"
-    )
-    await callback_query.answer()
-
-
-@app.on_callback_query(filters.regex("^stats$"))
-async def stats_callback(client: Client, callback_query: CallbackQuery):
-    user_id = callback_query.from_user.id
-    user = await get_user(user_id)
-    
-    has_valid_token = await is_token_valid(user_id)
-    
-    if has_valid_token:
-        expires_at = user['token_expires_at']
-        time_left = expires_at - datetime.utcnow()
-        hours_left = int(time_left.total_seconds() / 3600)
-        token_status = f"✅ Active ({hours_left}h left)"
-    else:
-        token_status = "❌ Inactive"
-    
-    stats_text = f"""
-📊 **Your Statistics**
-
-🎟️ **Token:** {token_status}
-📤 **Videos:** {user['videos_uploaded']}
-📅 **Joined:** {user['joined_at'].strftime('%d %b %Y')}
-"""
-    
-    await callback_query.answer(stats_text, show_alert=True)
-
-
-# Background task for cleaning expired tokens
-async def cleanup_task():
-    while True:
-        try:
-            await cleanup_expired_tokens()
-            await asyncio.sleep(3600)  # Run every hour
-        except Exception as e:
-            logger.error(f"Cleanup task error: {e}")
-            await asyncio.sleep(300)  # Retry after 5 minutes
-
-
-# Admin Commands
-@app.on_message(filters.command("broadcast") & filters.user(ADMIN_ID))
+@Bot.on_message(filters.command("broadcast") & filters.user(Config.ADMINS) & filters.reply)
 async def broadcast_command(client: Client, message: Message):
-    if len(message.command) < 2:
-        await message.reply_text("Usage: /broadcast <message>")
-        return
+    """Broadcast message to all users"""
+    broadcast_msg = message.reply_to_message
     
-    broadcast_text = message.text.split(None, 1)[1]
-    users = users_collection.find()
-    
+    users = await db.get_all_users()
+    total = len(users)
     success = 0
     failed = 0
     
-    status_msg = await message.reply_text("📡 Broadcasting...")
+    status_msg = await message.reply_text("ðŸ“¡ Broadcasting...")
     
     for user in users:
         try:
-            await client.send_message(user['user_id'], broadcast_text)
+            await broadcast_msg.copy(user['id'])
             success += 1
-        except:
+        except (UserIsBlocked, InputUserDeactivated):
+            failed += 1
+        except FloodWait as e:
+            await asyncio.sleep(e.value)
+            await broadcast_msg.copy(user['id'])
+            success += 1
+        except Exception:
             failed += 1
     
     await status_msg.edit_text(
-        f"✅ Broadcast complete!\n\n"
-        f"Success: {success}\nFailed: {failed}"
+        f"âœ… Broadcast Completed!\n\n"
+        f"Total Users: {total}\n"
+        f"Success: {success}\n"
+        f"Failed: {failed}"
     )
 
-
-@app.on_message(filters.command("botstats") & filters.user(ADMIN_ID))
-async def bot_stats_command(client: Client, message: Message):
-    total_users = users_collection.count_documents({})
-    active_tokens = users_collection.count_documents({
-        "token_expires_at": {"$gt": datetime.utcnow()}
-    })
-    total_videos = videos_collection.count_documents({})
+@Bot.on_message(filters.command("stats") & filters.user(Config.ADMINS))
+async def stats_command(client: Client, message: Message):
+    """Show bot statistics"""
+    uptime = get_readable_time(int(time.time() - BOT_START_TIME))
+    total_users = await db.total_users_count()
+    total_files = await db.total_files_count()
     
-    stats_text = f"""
-🤖 **Bot Statistics**
-
-👥 **Total Users:** {total_users}
-✅ **Active Tokens:** {active_tokens}
-🎬 **Total Videos:** {total_videos}
-📅 **Uptime:** Running smoothly
-"""
+    stats_text = Config.BOT_STATS_TEXT.format(
+        uptime=uptime,
+        users=total_users,
+        files=total_files
+    )
     
     await message.reply_text(stats_text)
 
-
-# HTTP server for Render health check
-async def health_check(request):
-    return web.Response(text="Bot is running!")
-
-
-async def start_http_server():
-    """Start HTTP server for Render port binding"""
-    app_web = web.Application()
-    app_web.router.add_get('/health', health_check)
-    app_web.router.add_get('/', health_check)
+@Bot.on_message(filters.command("batch") & filters.user(Config.ADMINS) & filters.private)
+async def batch_command(client: Client, message: Message):
+    """Generate batch link"""
+    if len(message.command) < 3:
+        await message.reply_text(
+            "ðŸ“ Usage:\n\n"
+            "/batch [first_message_id] [last_message_id]\n\n"
+            "Example: /batch 100 150"
+        )
+        return
     
-    runner = web.AppRunner(app_web)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', PORT)
-    await site.start()
-    logger.info(f"HTTP server started on port {PORT}")
-
-
-# Main function
-async def main():
-    await app.start()
-    logger.info("Bot started successfully!")
+    try:
+        first_id = int(message.command[1])
+        last_id = int(message.command[2])
+        
+        if first_id > last_id:
+            await message.reply_text("âŒ First ID must be less than Last ID!")
+            return
+        
+        # Verify messages exist
+        try:
+            await client.get_messages(Config.CHANNEL_ID, first_id)
+            await client.get_messages(Config.CHANNEL_ID, last_id)
+        except Exception as e:
+            await message.reply_text(f"âŒ Error: Invalid message IDs!\n{str(e)}")
+            return
+        
+        # Generate link
+        encoded = encode_file_id(f"{first_id}-{last_id}")
+        bot_username = (await client.get_me()).username
+        link = f"https://t.me/{bot_username}?start={encoded}"
+        
+        await message.reply_text(
+            f"âœ… **Batch Link Generated!**\n\n"
+            f"ðŸ“Š Total Messages: {last_id - first_id + 1}\n"
+            f"ðŸ”— Link: `{link}`",
+            quote=True
+        )
     
-    # Start HTTP server for Render
-    asyncio.create_task(start_http_server())
-    
-    # Start cleanup task
-    asyncio.create_task(cleanup_task())
-    
-    await asyncio.Event().wait()
+    except Exception as e:
+        logger.error(f"Error in batch command: {e}")
+        await message.reply_text(f"âŒ Error: {str(e)}")
 
+@Bot.on_message(filters.command("genlink") & filters.user(Config.ADMINS) & filters.private)
+async def genlink_command(client: Client, message: Message):
+    """Generate single file link"""
+    if len(message.command) < 2:
+        await message.reply_text(
+            "ðŸ“ Usage:\n\n"
+            "/genlink [message_id]\n\n"
+            "Example: /genlink 100"
+        )
+        return
+    
+    try:
+        msg_id = int(message.command[1])
+        
+        # Verify message exists
+        try:
+            msg = await client.get_messages(Config.CHANNEL_ID, msg_id)
+            if not msg:
+                raise Exception("Message not found")
+        except Exception as e:
+            await message.reply_text(f"âŒ Error: Invalid message ID!\n{str(e)}")
+            return
+        
+        # Generate link
+        encoded = encode_file_id(str(msg_id))
+        bot_username = (await client.get_me()).username
+        link = f"https://t.me/{bot_username}?start={encoded}"
+        
+        await message.reply_text(
+            f"âœ… **Link Generated!**\n\n"
+            f"ðŸ”— Link: `{link}`",
+            quote=True
+        )
+    
+    except Exception as e:
+        logger.error(f"Error in genlink command: {e}")
+        await message.reply_text(f"âŒ Error: {str(e)}")
+
+@Bot.on_message(filters.command("id"))
+async def id_command(client: Client, message: Message):
+    """Get user/chat ID"""
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+    
+    text = f"ðŸ‘¤ Your User ID: `{user_id}`\n"
+    
+    if message.chat.type != enums.ChatType.PRIVATE:
+        text += f"ðŸ’¬ Chat ID: `{chat_id}`\n"
+    
+    if message.reply_to_message:
+        reply_user_id = message.reply_to_message.from_user.id
+        text += f"ðŸ‘¤ Replied User ID: `{reply_user_id}`"
+    
+    await message.reply_text(text, quote=True)
+
+@Bot.on_message(filters.channel & filters.chat(Config.CHANNEL_ID))
+async def save_file(client: Client, message: Message):
+    """Save files posted in database channel"""
+    try:
+        # Check if message has media
+        file_type = get_file_type(message)
+        if file_type == "unknown":
+            return
+        
+        file_id, unique_id = await get_file_id_and_ref(message)
+        
+        if file_id and unique_id:
+            await db.add_file(file_id, unique_id, message.caption)
+            logger.info(f"File saved: {file_id}")
+    
+    except Exception as e:
+        logger.error(f"Error saving file: {e}")
+
+@Bot.on_message(filters.private & filters.incoming)
+async def default_handler(client: Client, message: Message):
+    """Handle all other private messages"""
+    # Ignore commands
+    if message.text and message.text.startswith('/'):
+        return
+    
+    # Send user reply text
+    await message.reply_text(Config.USER_REPLY_TEXT, quote=True)
+
+# ============================================
+# CALLBACK QUERY HANDLERS
+# ============================================
+
+@Bot.on_callback_query(filters.regex(r"^check_sub:"))
+async def check_sub_callback(client: Client, query: CallbackQuery):
+    """Handle check subscription callback"""
+    encoded_file_id = query.data.split(":", 1)[1]
+    user_id = query.from_user.id
+    
+    # Check if user joined
+    is_joined = await is_user_joined(client, user_id, Config.FORCE_SUB_CHANNEL)
+    
+    if is_joined:
+        await query.answer("âœ… Subscription verified!", show_alert=True)
+        await query.message.delete()
+        
+        # Create a dummy message to send file
+        class DummyMessage:
+            def __init__(self, user, client):
+                self.from_user = user
+                self.chat = user
+                self.client = client
+            
+            async def reply_text(self, text, **kwargs):
+                return await client.send_message(self.from_user.id, text)
+            
+            async def delete(self):
+                pass
+        
+        dummy_msg = DummyMessage(query.from_user, client)
+        await send_file(client, dummy_msg, encoded_file_id)
+    
+    else:
+        await query.answer("âŒ You haven't joined yet!", show_alert=True)
+
+# ============================================
+# MAIN EXECUTION
+# ============================================
 
 if __name__ == "__main__":
-    app.run(main())
+    logger.info("Bot starting...")
+    
+    # Validate configuration
+    if not Config.BOT_TOKEN:
+        logger.error("BOT_TOKEN not found!")
+        sys.exit(1)
+    
+    if not Config.API_HASH or Config.APP_ID == 0:
+        logger.error("API_HASH or APP_ID not found!")
+        sys.exit(1)
+    
+    if Config.CHANNEL_ID == 0:
+        logger.error("CHANNEL_ID not found!")
+        sys.exit(1)
+    
+    if not Config.DB_URL:
+        logger.error("DB_URL not found!")
+        sys.exit(1)
+    
+    logger.info("Starting bot...")
+    Bot.run()
