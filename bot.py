@@ -39,7 +39,6 @@ class Config:
     ADRINOLINKS_API_KEY = os.environ.get("ADRINOLINKS_API_KEY", "")
     ADRINOLINKS_SECRET = os.environ.get("ADRINOLINKS_SECRET", "")
     ADRINOLINKS_BASE = "https://adrinolinks.in/api"
-    ANDROID_APP_LINK = os.environ.get("ANDROID_APP_LINK", "myapp://open")  # deep link for Android app
 
 # ---------------- DATABASE ----------------
 class Database:
@@ -79,25 +78,19 @@ def decode_file_id(encoded_id: str) -> str:
     return base64.urlsafe_b64decode(encoded_id.encode()).decode()
 
 async def generate_ad_link(user_id: int) -> str:
-    """
-    Generate adrinolinks short link with secret verification
-    and Android deep link support
-    """
+    """Generate adrinolinks short link with secret verification"""
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            original_url = f"https://file-sharing-yw4r.onrender.com/ad_complete?user={user_id}&secret={Config.ADRINOLINKS_SECRET}"
-            # Include android deep link for mobile users
-            android_url = f"{Config.ANDROID_APP_LINK}?redirect={original_url}"
             params = {
                 "apikey": Config.ADRINOLINKS_API_KEY,
-                "url": android_url
+                "url": f"https://file-sharing-yw4r.onrender.com/ad_complete?user={user_id}&secret={Config.ADRINOLINKS_SECRET}"
             }
             resp = await client.get(Config.ADRINOLINKS_BASE, params=params)
             data = resp.json()
-            return data.get("shortened", android_url)
+            return data.get("shortened", f"https://file-sharing-yw4r.onrender.com/ad_complete?user={user_id}&secret={Config.ADRINOLINKS_SECRET}")
     except Exception as e:
         logger.error(f"Ad link generation error: {e}")
-        return f"{Config.ANDROID_APP_LINK}?redirect=https://file-sharing-yw4r.onrender.com/ad_complete?user={user_id}&secret={Config.ADRINOLINKS_SECRET}"
+        return f"https://file-sharing-yw4r.onrender.com/ad_complete?user={user_id}&secret={Config.ADRINOLINKS_SECRET}"
 
 # ---------------- BOT SETUP ----------------
 Bot = Client("FileShareBot", api_id=Config.APP_ID, api_hash=Config.API_HASH, bot_token=Config.BOT_TOKEN, workers=50)
@@ -119,12 +112,6 @@ async def start_health_server():
             secret = request.query.get("secret")
             if secret != Config.ADRINOLINKS_SECRET:
                 return web.Response(text="❌ Invalid request!", status=403)
-
-            # Prevent multiple token activations
-            user = await db.users.find_one({'id': user_id})
-            if user and 'token_expiry' in user and datetime.datetime.utcnow() < user['token_expiry']:
-                return web.Response(text="⚠ Token already active.", status=200)
-
             await db.set_token(user_id)
             return web.Response(text="✅ Token activated! Return to Telegram.", status=200)
         except Exception as e:
@@ -188,18 +175,12 @@ async def start_command(client, message: Message):
 async def main():
     await start_health_server()
     await Bot.start()
-    logger.info("Bot started! Owner upload + token system with adrinolinks + Android deep link enabled.")
+    logger.info("Bot started! Owner upload + token system with adrinolinks verification enabled.")
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    required_vars = [
-        Config.BOT_TOKEN, Config.API_HASH, Config.APP_ID,
-        Config.CHANNEL_ID, Config.DB_URL,
-        Config.ADRINOLINKS_API_KEY, Config.ADRINOLINKS_SECRET,
-        Config.ANDROID_APP_LINK
-    ]
-    if not all(required_vars):
-        logger.error("Please set all required environment variables including ADRINOLINKS_SECRET and ANDROID_APP_LINK!")
+    if not all([Config.BOT_TOKEN, Config.API_HASH, Config.APP_ID, Config.CHANNEL_ID, Config.DB_URL, Config.ADRINOLINKS_API_KEY, Config.ADRINOLINKS_SECRET]):
+        logger.error("Please set all environment variables including ADRINOLINKS_SECRET!")
         sys.exit(1)
     loop = asyncio.get_event_loop()
     try:
