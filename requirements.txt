@@ -2,6 +2,7 @@ pyrogram
 TgCrypto
 pyromod
 pymongo
+fastapi
 dnspython
 aiohttp
 python-dotenv==1.0.0
