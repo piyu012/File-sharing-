@@ -127,7 +127,13 @@ async def cleanup_expired_tokens():
 
 
 async def save_video(file_id: str, user_id: int, file_name: str):
-    """Save video to database"""
+    """Save video to database (skip if duplicate)"""
+    # Check if video already exists
+    existing = videos_collection.find_one({"file_id": file_id})
+    if existing:
+        logger.info(f"Video already exists: {file_id}")
+        return
+    
     video_data = {
         "file_id": file_id,
         "user_id": user_id,
@@ -135,17 +141,30 @@ async def save_video(file_id: str, user_id: int, file_name: str):
         "uploaded_at": datetime.utcnow()
     }
     videos_collection.insert_one(video_data)
+    logger.info(f"Video saved: {file_id}")
 
 
 async def shorten_url(long_url: str):
     """Shorten URL using AdrinoLinks API"""
+    if not ADRINOLINKS_API_KEY:
+        logger.warning("ADRINOLINKS_API_KEY not set, returning original URL")
+        return long_url
+    
     try:
         api_url = f"https://adrinolinks.com/api?api={ADRINOLINKS_API_KEY}&url={long_url}"
         response = requests.get(api_url, timeout=10)
+        
+        logger.info(f"AdrinoLinks API response status: {response.status_code}")
+        logger.info(f"AdrinoLinks API response: {response.text[:200]}")
+        
         if response.status_code == 200:
-            data = response.json()
-            if data.get('status') == 'success':
-                return data.get('shortenedUrl')
+            try:
+                data = response.json()
+                if data.get('status') == 'success' and data.get('shortenedUrl'):
+                    return data.get('shortenedUrl')
+            except ValueError:
+                logger.error("AdrinoLinks returned invalid JSON")
+        
         return long_url
     except Exception as e:
         logger.error(f"URL shortening error: {e}")
@@ -175,27 +194,38 @@ async def start_command(client: Client, message: Message):
         # Handle video access from shared link
         try:
             import base64
-            # Add padding if needed for base64 decoding
-            padded_param = param + '=='
-            decoded = base64.b64decode(padded_param).decode('utf-8')
+            # Add padding for proper base64 decoding
+            missing_padding = len(param) % 4
+            if missing_padding:
+                param += '=' * (4 - missing_padding)
+            
+            decoded = base64.b64decode(param).decode('utf-8')
+            logger.info(f"Decoded parameter: {decoded}")
             
             if decoded.startswith('get-'):
                 file_id = decoded.replace('get-', '')
+                logger.info(f"Looking for video with file_id: {file_id}")
+                
                 video = videos_collection.find_one({"file_id": file_id})
                 if video:
                     await message.reply_text("📥 Fetching your video...")
-                    await client.send_video(
-                        user_id,
-                        file_id,
-                        caption="🎬 Here's your video!\n\n📤 Share karne ke liye /upload use karein"
-                    )
+                    try:
+                        await client.send_video(
+                            user_id,
+                            file_id,
+                            caption="🎬 Here's your video!\n\n📤 Share karne ke liye /upload use karein"
+                        )
+                    except Exception as send_error:
+                        logger.error(f"Video send error: {send_error}")
+                        await message.reply_text("❌ Video send karne mein error! File ID invalid ho sakti hai.")
                     return
                 else:
-                    await message.reply_text("❌ Video not found!")
+                    logger.warning(f"Video not found in database for file_id: {file_id}")
+                    await message.reply_text("❌ Video not found in database!")
                     return
         except Exception as e:
             logger.error(f"Deeplink decode error: {e}")
-            await message.reply_text("❌ Invalid link! Use /start for help.")
+            await message.reply_text(f"❌ Link decode error: {str(e)}\n\nUse /start for help.")
             return
     
     # Create user if doesn't exist
