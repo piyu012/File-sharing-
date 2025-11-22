@@ -140,7 +140,7 @@ async def save_video(file_id: str, user_id: int, file_name: str):
 async def shorten_url(long_url: str):
     """Shorten URL using AdrinoLinks API"""
     try:
-        api_url = f"https://adrinolinks.in/api?api={ADRINOLINKS_API_KEY}&url={long_url}"
+        api_url = f"https://adrinolinks.com/api?api={ADRINOLINKS_API_KEY}&url={long_url}"
         response = requests.get(api_url, timeout=10)
         if response.status_code == 200:
             data = response.json()
@@ -157,6 +157,38 @@ async def shorten_url(long_url: str):
 async def start_command(client: Client, message: Message):
     user_id = message.from_user.id
     username = message.from_user.username
+    
+    # Handle deep link parameters
+    if len(message.command) > 1:
+        param = message.command[1]
+        
+        # Handle token verification from ad link
+        if param.startswith('verify_'):
+            await activate_token(user_id)
+            await message.reply_text(
+                "✅ **Token Activated!**\n\n"
+                "Ab aap bot use kar sakte ho!\n"
+                "Use /upload to upload videos."
+            )
+            return
+        
+        # Handle video access from shared link
+        if param.startswith('Z') or len(param) > 10:
+            try:
+                import base64
+                decoded = base64.b64decode(param).decode()
+                if decoded.startswith('get-'):
+                    file_id = decoded.replace('get-', '')
+                    video = videos_collection.find_one({"file_id": file_id})
+                    if video:
+                        await client.send_video(
+                            user_id,
+                            file_id,
+                            caption="🎬 Here's your video!"
+                        )
+                        return
+            except:
+                pass
     
     # Create user if doesn't exist
     user = await get_user(user_id)
@@ -207,8 +239,13 @@ Niche button click karke token activate karo - 12 hours valid rahega!
 ⚠️ **Note:** Video links automatically ad ke saath aayenge. User jab link open karega, pehle ad dekhega!
 """
         
+        # Create ad link for token activation
+        bot_username = (await client.get_me()).username
+        token_verify_link = f"https://t.me/{bot_username}?start=verify_{user_id}"
+        ad_link = await shorten_url(token_verify_link)
+        
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Activate Token", callback_data="verify_token")]
+            [InlineKeyboardButton("📺 View Ad to Activate Token", url=ad_link)]
         ])
     
     await message.reply_text(welcome_text, reply_markup=keyboard)
@@ -297,9 +334,13 @@ async def handle_video(client: Client, message: Message):
             {"$inc": {"videos_uploaded": 1}}
         )
         
-        # Generate shareable link
+        # Generate base64 encoded shareable link
+        import base64
         bot_username = (await client.get_me()).username
-        video_link = f"https://t.me/{bot_username}?start=video_{file_id}"
+        
+        # Encode file_id to base64 for cleaner link
+        encoded_id = base64.b64encode(f"get-{file_id}".encode()).decode()
+        video_link = f"https://t.me/{bot_username}?start={encoded_id}"
         
         # Shorten link with AdrinoLinks
         short_link = await shorten_url(video_link)
@@ -389,6 +430,12 @@ Contact admin for support.
 # Callback Query Handlers
 @app.on_callback_query(filters.regex("^verify_token$"))
 async def verify_token_callback(client: Client, callback_query: CallbackQuery):
+    await callback_query.answer(
+        "❌ Ad dekhna zaroori hai!\nPehle 'View Ad to Activate Token' button click karein.",
+        show_alert=True
+    )
+    return
+    
     user_id = callback_query.from_user.id
     
     # Activate token
