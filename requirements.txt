@@ -3,6 +3,7 @@ TgCrypto
 pyromod
 pymongo
 fastapi
+httpx
 dnspython
 aiohttp
 python-dotenv==1.0.0
