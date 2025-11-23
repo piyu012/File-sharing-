@@ -343,8 +343,7 @@ async def owner_auto_link(client, message: Message):
     await message.reply_text(
         f"✅ **File Uploaded Successfully!**"
         f"📝 **File Type:** {ftype.title()}"
-        f"🔗 **Share Link:**
-`{share_link}`",
+        f"🔗 **Share Link:** `{share_link}`",
         quote=True
     )
 
