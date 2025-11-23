@@ -213,11 +213,8 @@ async def verify_handler(request):
             try:
                 await Bot.send_message(
                     user_id,
-                    f"✅ **Token Activated Successfully!**
-
-"
-                    f"आपका टोकन {Config.TOKEN_VALID_HOURS} घंटे के लिए एक्टिवेट हो गया है।
-"
+                    f"✅ **Token Activated Successfully!**"
+                    f"आपका टोकन {Config.TOKEN_VALID_HOURS} घंटे के लिए एक्टिवेट हो गया है।"
                     f"अब आप फाइल्स एक्सेस कर सकते हैं। /start भेजें।"
                 )
             except Exception as e:
