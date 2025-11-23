@@ -324,7 +324,25 @@ async def owner_auto_link(client, message: Message):
     ftype = "document" if message.document else "video" if message.video else "photo" if message.photo else "unknown"
     if ftype == "unknown":
         return
-    sent_msg = await message.copy(chat_id=Config.CHANNEL_ID)
+    
+    # Try to copy to channel with error handling
+    try:
+        sent_msg = await message.copy(chat_id=Config.CHANNEL_ID)
+    except Exception as e:
+        if "PEER_ID_INVALID" in str(e):
+            await message.reply_text(
+                "❌ **Channel Access Error!**"
+                "Bot cannot access the channel. Please:"
+                "1️⃣ Add bot to the channel"
+                "2️⃣ Make bot admin with post messages permission"
+                "3️⃣ Try uploading again",
+                quote=True
+            )
+            logger.error(f"Peer ID Invalid error for channel {Config.CHANNEL_ID}")
+        else:
+            await message.reply_text(f"❌ Upload failed: {e}", quote=True)
+        return
+    
     if sent_msg.document:
         file_id = sent_msg.document.file_id
         unique_id = sent_msg.document.file_unique_id
@@ -408,6 +426,40 @@ async def main():
     await Bot.start()
     me = await Bot.get_me()
     logger.info(f"Bot started as @{me.username}")
+    
+    # Auto-resolve channel peer issue on startup
+    try:
+        logger.info("🔄 Resolving channel peer...")
+        channel = await Bot.get_chat(Config.CHANNEL_ID)
+        logger.info(f"✅ Channel resolved: {channel.title} (ID: {channel.id})")
+        
+        # Test if bot can send messages
+        try:
+            test_msg = await Bot.send_message(
+                Config.CHANNEL_ID, 
+                f"🤖 **Bot Started Successfully!**"
+                f"Bot: @{me.username}"
+                f"Time: {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+            )
+            logger.info("✅ Bot has admin access to channel")
+            # Delete test message after 5 seconds
+            await asyncio.sleep(5)
+            try:
+                await Bot.delete_messages(Config.CHANNEL_ID, test_msg.id)
+            except:
+                pass
+        except Exception as e:
+            logger.warning(f"⚠️ Cannot send message to channel: {e}")
+            logger.warning("Make sure bot is added as admin in the channel!")
+            
+    except Exception as e:
+        logger.error(f"❌ Channel access error: {e}")
+        logger.error(f"Channel ID: {Config.CHANNEL_ID}")
+        logger.error("Please check:")
+        logger.error("1. Bot is added to the channel")
+        logger.error("2. Bot has admin rights")
+        logger.error("3. Channel ID is correct (with -100 prefix for supergroups)")
+    
     logger.info("✅ Owner upload enabled")
     logger.info("✅ Token system with adrinolinks verification enabled")
     logger.info(f"✅ Token validity: {Config.TOKEN_VALID_HOURS} hours")
