@@ -341,11 +341,8 @@ async def owner_auto_link(client, message: Message):
     bot_username = (await client.get_me()).username
     share_link = f"https://t.me/{bot_username}?start={encoded}"
     await message.reply_text(
-        f"✅ **File Uploaded Successfully!**
-
-"
-        f"📝 **File Type:** {ftype.title()}
-"
+        f"✅ **File Uploaded Successfully!**"
+        f"📝 **File Type:** {ftype.title()}"
         f"🔗 **Share Link:**
 `{share_link}`",
         quote=True
@@ -357,9 +354,7 @@ async def start_command(client, message: Message):
     await db.add_user(message.from_user.id, message.from_user.first_name, message.from_user.username)
     if message.from_user.id == Config.OWNER_ID:
         await message.reply_text(
-            "👑 **Hi Owner!**
-
-"
+            "👑 **Hi Owner!**"
             "Upload any file and I'll generate a shareable link for you.",
             quote=True
         )
@@ -371,19 +366,11 @@ async def start_command(client, message: Message):
             [InlineKeyboardButton("🔄 Activate Token", url=ad_url)]
         ])
         await message.reply_text(
-            "❌ **Token Expired!**
-
-"
-            "आपका टोकन एक्सपायर हो चुका है। फाइल एक्सेस करने के लिए:
-
-"
-            "1️⃣ नीचे दिए गए बटन पर क्लिक करें
-"
-            "2️⃣ एड पूरी देखें
-"
-            "3️⃣ टोकन ऑटोमेटिकली एक्टिवेट हो जाएगा
-
-"
+            "❌ **Token Expired!**"
+            "आपका टोकन एक्सपायर हो चुका है। फाइल एक्सेस करने के लिए:"
+            "1️⃣ नीचे दिए गए बटन पर क्लिक करें"
+            "2️⃣ एड पूरी देखें"
+            "3️⃣ टोकन ऑटोमेटिकली एक्टिवेट हो जाएगा"
             f"Token validity: **{Config.TOKEN_VALID_HOURS} घंटे**",
             reply_markup=keyboard,
             quote=True
@@ -394,12 +381,8 @@ async def start_command(client, message: Message):
     else:
         text = Config.START_MESSAGE.format(mention=message.from_user.mention)
         await message.reply_text(
-            f"✅ **Token Active!**
-
-"
-            f"आपका टोकन अगले **{Config.TOKEN_VALID_HOURS} घंटे** के लिए एक्टिवेटेड है।
-
-"
+            f"✅ **Token Active!**"
+            f"आपका टोकन अगले **{Config.TOKEN_VALID_HOURS} घंटे** के लिए एक्टिवेटेड है।"
             f"{text}",
             quote=True
         )
@@ -413,13 +396,9 @@ async def stats_command(client, message: Message):
         'token_expiry': {'$gt': datetime.datetime.utcnow()}
     })
     await message.reply_text(
-        f"📊 **Bot Statistics**
-
-"
-        f"👥 Total Users: **{total_users}**
-"
-        f"📁 Total Files: **{total_files}**
-"
+        f"📊 **Bot Statistics**"
+        f"👥 Total Users: **{total_users}**"
+        f"📁 Total Files: **{total_files}**"
         f"✅ Active Tokens: **{active_tokens}**",
         quote=True
     )
